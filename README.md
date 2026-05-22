@@ -76,9 +76,60 @@ QEP/
 └── third_party/                # 第三方库（Eigen / Spectra）
 ```
 
+## 安装到系统（可选）
+
+`QEP_INSTALL` 选项（默认 ON）用于将 QEP 库安装到系统目录，供其他 CMake 项目通过 `find_package(QEP)` 引用。
+
+### 执行安装
+
+构建完成后运行：
+
+```bash
+# 安装到系统默认路径（Linux: /usr/local/, Windows: C:/Program Files/）
+cmake --install .
+
+# 或指定安装目录
+cmake --install . --prefix D:/my_libs/QEP
+```
+
+安装后会生成以下文件结构：
+
+```
+<prefix>/
+├── include/
+│   ├── qep/QEP.h           # 公共头文件
+│   └── config/             # 配置文件
+├── lib/
+│   └── QEP.lib             # 静态库
+└── lib/cmake/QEP/
+    ├── QEPConfig.cmake      # 包配置文件
+    └── QEPTargets.cmake     # 目标导出文件
+```
+
+### 在其他项目中使用
+
+安装后，在其他 CMake 项目中只需写：
+
+```cmake
+find_package(QEP REQUIRED)
+target_link_libraries(my_project PRIVATE QEP::QEP)
+```
+
+不需要再手动配置 Eigen、Spectra 的路径，也不需要再设置 MKL 的编译选项，全部由 QEP 的安装包自动管理。
+
+### 注意事项
+
+- Windows 上推荐指定 `--prefix` 安装到自定义目录（避免管理员权限问题）
+- 如果安装到了非系统默认目录，需要设置 `CMAKE_PREFIX_PATH` 来帮助 `find_package` 找到 QEP：
+  ```bash
+  cmake .. -DCMAKE_PREFIX_PATH=D:/my_libs/QEP
+  ```
+- 如果只是在项目内部使用（不打算导出给其他项目），保持默认 `QEP_INSTALL=ON` 即可，不影响正常构建
+
 ## 问题数据说明
 
 程序自带的测试问题存放在 `Problems/` 目录下，分为三类：
+
 
 ### small_demo/ —— 小规模演示问题（100维）
 
