@@ -1,5 +1,5 @@
 {
-    "active_cases": ["sym_indefinite"],
+    "active_cases": ["test1"],
     "binary_conversion": {
         "auto_convert": true,
         "overwrite": true
@@ -24,7 +24,7 @@
         "default_sigma": 0.0,
         "enable_adaptive_parameters": false,
         "enabled_solvers": {
-            "BiCGSTAB": true,
+            "BiCGSTAB": false,
             "ConjugateGradient": false,
             "GMRES": false,
             "PardisoLU": true,
@@ -37,142 +37,5 @@
         "inner_max_iterations": 1000,
         "inner_tolerance": 1e-08
     },
-    "test_cases": [
-        {
-            "C_file": "benchmark/acoustic_wave_200k/C.bin",
-            "K_file": "benchmark/acoustic_wave_200k/K.bin",
-            "M_file": "benchmark/acoustic_wave_200k/M.bin",
-            "group": "benchmark",
-            "is_sparse": true,
-            "name": "acoustic_wave_200k"
-        },
-        {
-            "C_file": "benchmark/damped_beam_10k/C.bin",
-            "K_file": "benchmark/damped_beam_10k/K.bin",
-            "M_file": "benchmark/damped_beam_10k/M.bin",
-            "group": "benchmark",
-            "is_sparse": true,
-            "name": "damped_beam_10k"
-        },
-        {
-            "C_file": "benchmark/spring_200k/C.bin",
-            "K_file": "benchmark/spring_200k/K.bin",
-            "M_file": "benchmark/spring_200k/M.bin",
-            "group": "benchmark",
-            "is_sparse": true,
-            "name": "spring_200k"
-        },
-        {
-            "C_file": "benchmark/test_prob_1/C.bin",
-            "K_file": "benchmark/test_prob_1/K.bin",
-            "M_file": "benchmark/test_prob_1/M.bin",
-            "group": "benchmark",
-            "is_sparse": true,
-            "name": "test_prob_1"
-        },
-        {
-            "C_file": "benchmark/wiresaw1_10k/C.bin",
-            "K_file": "benchmark/wiresaw1_10k/K.bin",
-            "M_file": "benchmark/wiresaw1_10k/M.bin",
-            "group": "benchmark",
-            "is_sparse": true,
-            "name": "wiresaw1_10k"
-        },
-        {
-            "C_file": "engineering/generator_rotor_1k/C.bin",
-            "K_file": "engineering/generator_rotor_1k/K.bin",
-            "M_file": "engineering/generator_rotor_1k/M.bin",
-            "group": "engineering",
-            "is_sparse": true,
-            "name": "generator_rotor_1k"
-        },
-        {
-            "C_file": "engineering/plate_10k/C.bin",
-            "K_file": "engineering/plate_10k/K.bin",
-            "M_file": "engineering/plate_10k/M.bin",
-            "group": "engineering",
-            "is_sparse": true,
-            "name": "plate_10k"
-        },
-        {
-            "C_file": "engineering/turbine_560k/C.bin",
-            "K_file": "engineering/turbine_560k/K.bin",
-            "M_file": "engineering/turbine_560k/M.bin",
-            "group": "engineering",
-            "is_sparse": true,
-            "name": "turbine_560k"
-        },
-        {
-            "C_file": "engineering/vibrating_screen_780k/C.bin",
-            "K_file": "engineering/vibrating_screen_780k/K.bin",
-            "M_file": "engineering/vibrating_screen_780k/M.bin",
-            "group": "engineering",
-            "is_sparse": true,
-            "name": "vibrating_screen_780k"
-        },
-        {
-            "C_file": "small_demo/sym_indefinite/C.bin",
-            "K_file": "small_demo/sym_indefinite/K.bin",
-            "M_file": "small_demo/sym_indefinite/M.bin",
-            "group": "small_demo",
-            "is_sparse": true,
-            "name": "sym_indefinite"
-        },
-        {
-            "C_file": "small_demo/sym_pos_def/C.bin",
-            "K_file": "small_demo/sym_pos_def/K.bin",
-            "M_file": "small_demo/sym_pos_def/M.bin",
-            "group": "small_demo",
-            "is_sparse": true,
-            "name": "sym_pos_def"
-        },
-        {
-            "C_file": "small_demo/sym_semi_pos_def/C.bin",
-            "K_file": "small_demo/sym_semi_pos_def/K.bin",
-            "M_file": "small_demo/sym_semi_pos_def/M.bin",
-            "group": "small_demo",
-            "is_sparse": true,
-            "name": "sym_semi_pos_def"
-        },
-        {
-            "C_file": "small_demo/unsymmetric/C.bin",
-            "K_file": "small_demo/unsymmetric/K.bin",
-            "M_file": "small_demo/unsymmetric/M.bin",
-            "group": "small_demo",
-            "is_sparse": true,
-            "name": "unsymmetric"
-        },
-        {
-            "C_file": "user's problems/test1/C.bin",
-            "K_file": "user's problems/test1/K.bin",
-            "M_file": "user's problems/test1/M.bin",
-            "group": "user",
-            "is_sparse": true,
-            "name": "test1"
-        },
-        {
-            "C_file": "user's problems/test2/C.bin",
-            "K_file": "user's problems/test2/K.bin",
-            "M_file": "user's problems/test2/M.bin",
-            "group": "user",
-            "is_sparse": true,
-            "name": "test2"
-        },
-        {
-            "C_file": "user's problems/test3/C.bin",
-            "K_file": "user's problems/test3/K.bin",
-            "M_file": "user's problems/test3/M.bin",
-            "group": "user",
-            "is_sparse": true,
-            "name": "test3"
-        },
-        {
-            "C_file": "user's problems/test4/C.txt",
-            "K_file": "user's problems/test4/K.txt",
-            "M_file": "user's problems/test4/M.txt",
-            "group": "user",
-            "is_sparse": true,
-            "name": "test4"
-        }
-    ]
+    "test_cases": []
 }

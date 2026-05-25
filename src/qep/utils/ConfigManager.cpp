@@ -8,6 +8,8 @@
 #include <fstream>
 #include <iomanip>
 #include <filesystem>
+#include <functional>
+#include <set>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -273,6 +275,8 @@ std::vector<TestCase> ConfigManager::testCases() const
     std::vector<TestCase> cases;
     auto &base = base_path_;
 
+    std::set<std::string> configuredNames;
+
     auto arr = data_->value("test_cases", nlohmann::json::array());
     for (const auto &item : arr)
     {
@@ -283,9 +287,90 @@ std::vector<TestCase> ConfigManager::testCases() const
         tc.K_file = base + "/" + item.value("K_file", "");
         tc.is_sparse = item.value("is_sparse", true);
         tc.group = item.value("group", "");
+        tc.description = item.value("description", "");
         tc.overrides = item.value("overrides", nlohmann::json::object());
+        configuredNames.insert(tc.name);
         cases.push_back(tc);
     }
+
+    // 递归扫描 Problems/ 目录
+    try {
+        std::filesystem::path basePath(base);
+        if (!std::filesystem::exists(basePath)) {
+            if (cases.empty())
+                std::cerr << "[ConfigManager] Problem path not found: " << base << "\n";
+                // 仅仅警告，让调用方处理空列表
+        } else {
+            // 递归收集所有包含 M/C/K 文件的目录
+            std::function<void(const std::filesystem::path&)> scanDir =
+                [&](const std::filesystem::path &dir) {
+                for (const auto &entry : std::filesystem::directory_iterator(dir)) {
+                    if (!entry.is_directory()) continue;
+                    auto &sub = entry.path();
+                    // 跳过隐藏文件和空占位目录
+                    auto dirname = sub.filename().string();
+                    if (dirname.empty() || dirname[0] == '.') continue;
+
+                    // 检查此目录是否直接包含 M/C/K
+                    auto hasFile = [&](const std::string &suffix) {
+                        return std::filesystem::exists(sub / ("M" + suffix)) &&
+                               std::filesystem::exists(sub / ("C" + suffix)) &&
+                               std::filesystem::exists(sub / ("K" + suffix));
+                    };
+                    std::string ext;
+                    if (hasFile(".bin")) ext = ".bin";
+                    else if (hasFile(".txt")) ext = ".txt";
+
+                    if (!ext.empty()) {
+                        // 找到问题：目录名 = name，父目录名 = group
+                        std::string nm = sub.filename().string();
+                        std::string grp = (sub.parent_path() == basePath)
+                            ? "" : sub.parent_path().filename().string();
+
+                        if (configuredNames.count(nm)) {
+                            std::cerr << "[ConfigManager] Duplicate problem '" << nm
+                                      << "' at " << sub << " — skipped\n";
+                            continue;
+                        }
+
+                        TestCase tc;
+                        tc.name = nm;
+                        tc.M_file = (sub / ("M" + ext)).string();
+                        tc.C_file = (sub / ("C" + ext)).string();
+                        tc.K_file = (sub / ("K" + ext)).string();
+                        tc.is_sparse = true;
+                        tc.group = grp;
+
+                        // 读取 problem.json（可选）
+                        auto descPath = sub / "problem.json";
+                        if (std::filesystem::exists(descPath)) {
+                            try {
+                                std::ifstream df(descPath);
+                                nlohmann::json desc;
+                                df >> desc;
+                                if (desc.contains("name")) tc.name = desc["name"].get<std::string>();
+                                if (desc.contains("group")) tc.group = desc["group"].get<std::string>();
+                                if (desc.contains("description")) tc.description = desc["description"].get<std::string>();
+                                if (desc.contains("is_sparse")) tc.is_sparse = desc["is_sparse"].get<bool>();
+                                if (desc.contains("overrides")) tc.overrides = desc["overrides"];
+                            } catch (...) {}
+                        }
+                        configuredNames.insert(nm);
+                        cases.push_back(tc);
+                    } else {
+                        // 不包含 M/C/K，递归深入
+                        scanDir(sub);
+                    }
+                }
+            };
+            scanDir(basePath);
+        }
+    } catch (...) {}
+
+    if (cases.empty())
+        std::cerr << "[ConfigManager] No problems found. Place M.bin/C.bin/K.bin files under "
+                  << std::filesystem::absolute(base).string() << "/<problem_name>/\n";
+
     return cases;
 }
 

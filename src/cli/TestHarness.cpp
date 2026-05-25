@@ -9,6 +9,7 @@
 #include <chrono>
 #include <iomanip>
 #include <algorithm>
+#include <filesystem>
 using namespace QEP;
 
 // ---- 参数解析辅助 ----
@@ -193,6 +194,8 @@ std::vector<CaseResult> processCase(const Config::TestCase &tc,
                 << "  nev=" << nev << "  sigma=" << sigma;
         std::cout << fmt::secLine("Problem", dimInfo.str()) << "\n";
     }
+
+    std::cout << fmt::secLine("Source", std::filesystem::path(tc.M_file).parent_path().string()) << "\n";
 
     bool needCond  = appCfg.enable_condition_estimation;
     bool needCheck = appCfg.enable_matrix_property_check;

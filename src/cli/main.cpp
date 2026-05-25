@@ -11,6 +11,7 @@
 #include <sstream>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -116,7 +117,10 @@ static void listCases(const std::vector<Config::TestCase> &cases)
             std::cout << "  [" << (currentGroup.empty() ? "ungrouped" : currentGroup) << "]\n";
         }
         std::cout << "    " << tc.name
-                  << "  [" << tc.group << "]\n";
+                  << "  [" << tc.group << "]";
+        if (!tc.description.empty())
+            std::cout << "  — " << tc.description;
+        std::cout << "\n";
     }
     std::cout << std::endl;
 }
@@ -149,7 +153,12 @@ static void initEnvironment()
     {
 #ifdef EIGEN_USE_MKL_ALL
         char ver[128]; MKL_Get_Version_String(ver, 128);
-        std::cout << "  MKL: " << fmt::truncate(ver, 65) << "\n";
+        std::string v(ver);
+        // 提取 "Intel ... oneAPI ... MKL ... Version X.Y" 作为简短版本
+        auto pos = v.find("Version");
+        std::string shortVer = (pos != std::string::npos) ? v.substr(0, pos + 13) : v.substr(0, 70);
+        if (shortVer.size() < v.size()) shortVer += " ...";
+        std::cout << "  MKL: " << shortVer << "\n";
 #else
         std::cout << "  MKL: disabled\n";
 #endif
@@ -283,11 +292,6 @@ int main(int argc, char *argv[])
     if (!appCfg.active_cases.empty())
     {
         const auto &active = appCfg.active_cases;
-        std::cout << "  active_cases: ";
-        for (size_t i = 0; i < active.size(); ++i)
-            std::cout << (i ? ", " : "") << active[i];
-        std::cout << "\n";
-
         for (const auto &tc : allCases)
         {
             bool inActive = false;
@@ -319,7 +323,9 @@ int main(int argc, char *argv[])
 
     if (selectedCases.empty())
     {
-        std::cout << "No test cases match the filters. Use --list to see available cases.\n";
+        std::cerr << "No problems found in " << std::filesystem::absolute(appCfg.problem_base_path).string()
+                  << "\nPlace M.bin/C.bin/K.bin files in a subdirectory (e.g. Problems/my_problem/).\n"
+                  << "Or add a problem.json for metadata. Use --list to see available cases.\n";
         if (!appCfg.active_cases.empty())
             std::cout << "  active_cases is set in config.json\n";
         if (!caseFilter.empty())
@@ -334,11 +340,17 @@ int main(int argc, char *argv[])
 
     std::cout << fmt::secHdr("Configuration") << "\n";
     std::cout << fmt::secLine("Config file", fmt::truncate(cfg.configFilePath(), 60)) << "\n";
-    std::cout << fmt::secLine("Problem path", appCfg.problem_base_path) << "\n";
+    std::cout << fmt::secLine("Problem path", cfg.problemBasePath()) << "\n";
     std::cout << fmt::secLine("NEV", std::to_string(nevDisp)) << "\n";
     {
         std::ostringstream s; s << std::scientific << std::setprecision(2) << sigmaDisp;
         std::cout << fmt::secLine("Sigma", s.str()) << "\n";
+    }
+    if (!appCfg.active_cases.empty()) {
+        std::ostringstream ac;
+        for (size_t i = 0; i < appCfg.active_cases.size(); ++i)
+            ac << (i ? ", " : "") << appCfg.active_cases[i];
+        std::cout << fmt::secLine("Active cases", ac.str()) << "\n";
     }
     std::cout << fmt::secLine("Test cases", std::to_string(selectedCases.size()) + " / " + std::to_string(allCases.size()) + " selected") << "\n";
     {

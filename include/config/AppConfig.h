@@ -18,6 +18,7 @@ struct TestCase {
     std::string K_file;
     bool is_sparse = true;
     std::string group;
+    std::string description;
     nlohmann::json overrides;
 };
 
