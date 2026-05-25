@@ -1,8 +1,13 @@
-// utils/MatrixProperties.cpp
+//==============================================================================
+//  src/qep/utils/MatrixProperties.cpp  —  对称性/正定性/条件数/存储格式检测
+//==============================================================================
+
 #include "MatrixProperties.h"
-#include "config/GlobalConfig.h"
+#include "config/ConfigManager.h"
 #include <iostream>
+#include <sstream>
 #include <iomanip>
+
 
 #include <Eigen/Sparse>
 #include <Eigen/Cholesky>
@@ -32,7 +37,6 @@ namespace QEP
         }
 
         const Eigen::VectorXd &D = ldlt.vectorD();
-        double normA = A.norm(); // 用于相对容差
 
         int pos = 0, neg = 0, zero = 0;
         for (Eigen::Index i = 0; i < D.size(); ++i)
@@ -148,65 +152,63 @@ namespace QEP
         return MatrixStorageType::FullSymmetric;
     }
 
-    // 打印矩阵性质
-    void PrintMatrixProperties(const Eigen::SparseMatrix<double> &mat, const std::string &name, double cond_est = -1.0)
+    // 打印矩阵性质——返回格式化字符串而非直接 std::cout
+    std::string printMatrixProperties(const Eigen::SparseMatrix<double> &mat, const std::string &name, double cond_est)
     {
+        std::ostringstream oss;
         auto storage = checkMatrixStorage(mat);
         switch (storage)
         {
         case MatrixStorageType::FullSymmetric:
         {
             MatrixDefiniteness def = classifyDefiniteness(mat, 1e-12);
-            std::cout << name << "(";
+            oss << name << "(";
             switch (def)
             {
             case MatrixDefiniteness::SymmetricPositiveDefinite:
-                std::cout << "对称正定";
+                oss << "SPD";
                 break;
             case MatrixDefiniteness::SymmetricPositiveSemiDefinite:
-                std::cout << "对称半正定";
+                oss << "SPSD";
                 break;
             case MatrixDefiniteness::SymmetricIndefinite:
-                std::cout << "对称不定";
+                oss << "Indefinite";
                 break;
             case MatrixDefiniteness::SymmetricNegativeDefinite:
-                std::cout << "对称负定";
-                break;
-            case MatrixDefiniteness::NumericallySingular:
-                std::cout << "奇异";
+                oss << "Negative Definite";
                 break;
             default:
-                std::cout << "对称但定性未知";
+                oss << "Symmetric (unknown definiteness)";
                 break;
             }
             if (cond_est > 0 && (def == MatrixDefiniteness::SymmetricPositiveDefinite ||
                                  def == MatrixDefiniteness::SymmetricNegativeDefinite))
             {
-                std::cout << " 条件数: " << std::scientific << std::setprecision(2) << cond_est;
+                oss << "  Cond: " << std::scientific << std::setprecision(2) << cond_est;
             }
-            std::cout << ") ";
+            oss << ") ";
             break;
         }
         case MatrixStorageType::FullNonSymmetric:
-            if (Config::LOG_LEVEL >= 2)
-                std::cout << name << "(非对称，数值不对称) ";
-            else
-                std::cout << name << "(非对称) ";
+            oss << name << "(Non-symmetric, numerically asymmetric) ";
             break;
         case MatrixStorageType::UpperTriangular:
-            std::cout << name << "(上三角) ";
+            oss << name << "(Upper triangular) ";
             break;
         case MatrixStorageType::LowerTriangular:
-            std::cout << name << "(下三角) ";
+            oss << name << "(Lower triangular) ";
             break;
         case MatrixStorageType::NonSquare:
-            std::cout << name << "(非方阵) ";
+            oss << name << "(Non-square) ";
             break;
         default:
-            std::cout << name << "(存储状态未知) ";
+            oss << name << "(Unknown storage) ";
             break;
         }
+        oss << "\n";
+        return oss.str();
     }
+
 
     //------- 矩阵条件数估计-------
     // 幂法
@@ -287,7 +289,7 @@ namespace QEP
         return std::abs(lambda);
     }
 
-    double estimateConditionNumber(const Eigen::SparseMatrix<double> &A, bool is_print)
+    double estimateConditionNumber(const Eigen::SparseMatrix<double> &A)
     {
         int n = A.rows();
         if (n == 0)
@@ -295,8 +297,6 @@ namespace QEP
         double lambda_max = powerMethod(A, 100, 1e-6);
         if (lambda_max < 1e-14)
             return -1.0;
-        if (is_print)
-            std::cout << "最大模特征值模数估计：" << std::scientific << std::setprecision(4) << lambda_max << std::defaultfloat << std::endl;
 
 #ifdef EIGEN_PARDISO_SUPPORT
         // 优先使用 PardisoLU（更快）
@@ -304,19 +304,17 @@ namespace QEP
         solver.compute(A);
         if (solver.info() != Eigen::Success)
         {
-            std::cerr << "[条件数估计] PardisoLU 分解失败，回退到 SparseLU" << std::endl;
+            std::cerr << "[Cond. est.] PardisoLU failed, falling back to SparseLU" << std::endl;
             Eigen::SparseLU<Eigen::SparseMatrix<double>> solver_sl;
             solver_sl.compute(A);
             if (solver_sl.info() != Eigen::Success)
             {
-                std::cerr << "[条件数估计] SparseLU 分解也失败" << std::endl;
+                std::cerr << "[Cond. est.] SparseLU also failed" << std::endl;
                 return -1.0;
             }
             double lambda_min = inversePowerMethodSparseLU(solver_sl, 100, 1e-6);
             if (lambda_min < 1e-14)
                 return 1e15;
-            if (is_print)
-                std::cout << "最小模特征值模数估计：" << std::scientific << std::setprecision(4) << lambda_min << std::defaultfloat << std::endl;
             return lambda_max / lambda_min;
         }
         double lambda_min = inversePowerMethod(solver, 100, 1e-6);
@@ -326,7 +324,7 @@ namespace QEP
         solver.compute(A);
         if (solver.info() != Eigen::Success)
         {
-            std::cerr << "[条件数估计] SparseLU 分解失败" << std::endl;
+            std::cerr << "[Cond. est.] SparseLU failed" << std::endl;
             return -1.0;
         }
         double lambda_min = inversePowerMethodSparseLU(solver, 100, 1e-6);
@@ -334,18 +332,16 @@ namespace QEP
 
         if (lambda_min < 1e-14)
             return 1e15;
-        if (is_print)
-            std::cout << "最小模特征值模数估计：" << std::scientific << std::setprecision(4) << lambda_min << std::defaultfloat << std::endl;
         return lambda_max / lambda_min;
     }
 
-    void estimateAndWarnConditionNumber(const Eigen::SparseMatrix<double> &K, bool is_print)
+    void estimateAndWarnConditionNumber(const Eigen::SparseMatrix<double> &K)
     {
-        double cond = estimateConditionNumber(K, is_print);
-        std::cout << "K矩阵条件数估计: " << std::scientific << std::setprecision(2) << cond << std::defaultfloat << std::endl;
+        double cond = estimateConditionNumber(K);
+        std::cout << "K condition number estimate: " << std::scientific << std::setprecision(2) << cond << std::defaultfloat << std::endl;
         if (cond > 1e10)
-            std::cout << "严重警告：条件数极大，求解可能极不稳定！" << std::endl;
+            std::cout << "SEVERE: extremely large condition number, results may be unstable." << std::endl;
         else if (cond > 1e8)
-            std::cout << "警告：条件数较大，迭代法收敛可能缓慢或失败 " << std::endl;
+            std::cout << "WARNING: large condition number, iterative methods may converge slowly." << std::endl;
     }
 } // namespace QEP

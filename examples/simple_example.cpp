@@ -1,10 +1,6 @@
-/**
- * @file simple_example.cpp
- * @brief QEP库简单使用示例
- *
- * 本示例展示如何使用QEP库求解二次特征值问题：
- *   (λ²M + λC + K)x = 0
- */
+//==============================================================================
+//  examples/simple_example.cpp  —  QEP 求解器简单编程调用示例
+//==============================================================================
 
 #include <qep/QEP.h>
 #include <iostream>
@@ -111,9 +107,10 @@ int main() {
 
         // 计算并显示残差
         if (result.eigenvectors.cols() > 0) {
-            double max_residual = QEP::printResidualTable(
+            auto [maxRes, tableStr] = QEP::computeAndFormatResiduals(
                 problem.M, problem.C, problem.K, result);
-            std::cout << "\nMaximum relative residual: " << max_residual << "\n";
+            if (!tableStr.empty()) std::cout << tableStr;
+            std::cout << "\nMaximum relative residual: " << maxRes << "\n";
         }
     } else {
         std::cerr << "Solution failed!\n";

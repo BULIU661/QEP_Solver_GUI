@@ -1,4 +1,7 @@
-// utils/MatrixProperties.h
+//==============================================================================
+//  src/qep/utils/MatrixProperties.h  —  矩阵性质分析接口声明
+//==============================================================================
+
 #ifndef MATRIX_PROPERTIES_H
 #define MATRIX_PROPERTIES_H
 
@@ -24,13 +27,12 @@ double inversePowerMethodSparseLU(const Eigen::SparseLU<Eigen::SparseMatrix<doub
 bool isSymmetric(const Eigen::SparseMatrix<double> &A);
 bool isPositiveDefinite(const Eigen::SparseMatrix<double> &A);
 MatrixDefiniteness classifyDefiniteness(const Eigen::SparseMatrix<double> &A, double tol);
-  void PrintMatrixProperties(const Eigen::SparseMatrix<double> &mat, const std::string &name, double cond_est );
+  std::string printMatrixProperties(const Eigen::SparseMatrix<double> &mat, const std::string &name, double cond_est );
+
 // 条件数估计
-double estimateConditionNumber(const Eigen::SparseMatrix<double> &A, bool is_print);
+double estimateConditionNumber(const Eigen::SparseMatrix<double> &A);
 MatrixStorageType checkMatrixStorage(const Eigen::SparseMatrix<double> &A);
-// 辅助打印
-void checkMatrixProperties(const Eigen::SparseMatrix<double> &mat, const std::string &name);
-void estimateAndWarnConditionNumber(const Eigen::SparseMatrix<double> &K,bool is_print);
+void estimateAndWarnConditionNumber(const Eigen::SparseMatrix<double> &K);
 
 } // namespace QEP
 
