@@ -1,6 +1,11 @@
-# 收集所有源文件（排除 test 目录，因为 test 是单独子目录）
-file(GLOB_RECURSE QEP_SOURCES CONFIGURE_DEPENDS "qep/*.cpp")
-# 如果有任何不希望包含的文件，可以在这里过滤 例如：list(FILTER QEP_SOURCES EXCLUDE REGEX ".*/test/.*")
+set(QEP_SOURCES
+    qep/core/UnifiedSolver.cpp
+    qep/io/MatrixIO.cpp
+    qep/utils/ConfigManager.cpp
+    qep/utils/CreateProblem.cpp
+    qep/utils/MatrixProperties.cpp
+    qep/utils/ResidualValidation.cpp
+)
 
 add_library(QEP STATIC ${QEP_SOURCES})
 target_link_libraries(QEP PUBLIC qep_common)

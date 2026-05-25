@@ -1,17 +1,19 @@
-/**
- * @file UnifiedSolver.cpp
- * @brief 统一二次特征值求解器实现
- * 算法的核心部分，构造op算子，实现线性化求解器，并封装为统一的二次特征值求解接口。
- */
+//==============================================================================
+//  src/qep/core/UnifiedSolver.cpp  —  统一位移求逆 Arnoldi 二次特征值求解器实现
+//==============================================================================
 
 #include "qep/QEP.h"
 #include "config/GlobalConfig.h"
+#include "config/SolverParams.h"
 #include <iostream>
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <stdexcept>
 #include <variant>
 #include <iomanip>
 #include <algorithm>
+#include <sstream>
 #include <Eigen/SparseLU>
 #include <Eigen/IterativeLinearSolvers>
 #include <Eigen/SparseCholesky>
@@ -24,6 +26,7 @@
 
 namespace QEP
 {
+    // 获取配置管理器单例（延迟初始化，避免静态初始化顺序问题）
 
     // ----------------------------------------------------------------------------
     // 使用 variant 容纳不同类型的求解器对象
@@ -43,6 +46,18 @@ namespace QEP
                                      Eigen::IncompleteLUT<double>>>>;
 
     // ----------------------------------------------------------------------------
+    // 格式化辅助：双精度转字符串
+    // ----------------------------------------------------------------------------
+    static std::string fmtDouble(double val, int precision = 3, bool scientific = false) {
+        std::ostringstream oss;
+        if (scientific)
+            oss << std::scientific << std::setprecision(precision) << val;
+        else
+            oss << std::fixed << std::setprecision(precision) << val;
+        return oss.str();
+    }
+
+    // ----------------------------------------------------------------------------
     // 泛型移频算子
     // ----------------------------------------------------------------------------
     class UnifiedShiftInvertOp
@@ -60,23 +75,21 @@ namespace QEP
                              const Eigen::SparseMatrix<double> &K,
                              double sigma,
                              LinearSolverType solverType,
-                             const LinearSolverConfig &config)
+                             const LinearSolverConfig &config,
+                             QuadraticEigenvalueResult *result = nullptr,
+                             const Config::SolverParams &params = {})
             : M_(M), C_(C), K_(K), n_(M.rows()), sigma_(sigma),
-              solverType_(solverType), config_(config)
+              solverType_(solverType), config_(config), params_(params)
         {
-            work1_.resize(n_);
-            work2_.resize(n_);
+            buildTargetMatrix(result);
 
-            buildTargetMatrix();
-
-            auto t_pre0 = std::chrono::high_resolution_clock::now();
+auto t_pre0 = std::chrono::high_resolution_clock::now();
             setupSolver();
             auto t_pre1 = std::chrono::high_resolution_clock::now();
             preprocessing_time = std::chrono::duration<double>(t_pre1 - t_pre0).count();
-            if (Config::LOG_LEVEL >= 1)
+            if (result)
             {
-                std::cout << std::fixed << std::setprecision(3) << "S预处理时间: "
-                          << preprocessing_time << std::defaultfloat << " s\n";
+                result->addLog("Preconditioning time: " + fmtDouble(preprocessing_time) + " s\n");
             }
         }
 
@@ -93,21 +106,22 @@ namespace QEP
             const auto x2 = x.tail(n_);
 
             // rhs = -(M*x1 + (C+σM)*x2)
-            work1_ = -(M_ * x1 + CM_ * x2);
-            work2_ = solveWithTracking(work1_);
+            Eigen::VectorXd work1 = -(M_ * x1 + CM_ * x2);
+            Eigen::VectorXd work2 = solveWithTracking(work1);
 
             // 输出 w = [x2 + σ*w2; w2]
-            y.head(n_) = x2 + sigma_ * work2_;
-            y.tail(n_) = work2_;
+            y.head(n_) = x2 + sigma_ * work2;
+            y.tail(n_) = work2;
         }
 
         // 内层迭代统计信息 (public以便外部访问)
-        mutable int total_inner_iterations_ = 0;
-        mutable int num_solves_ = 0;
-        mutable bool last_solve_converged_ = true;
-        mutable int last_solve_iterations_ = 0;
-        mutable int max_inner_iterations_per_solve_ = 0;
-        mutable double total_solve_time_ = 0.0;
+        // mutable: 允许在 const perform_op 中通过原子操作安全更新统计信息
+        mutable std::atomic<int> total_inner_iterations_{0};
+        mutable std::atomic<int> num_solves_{0};
+        mutable std::atomic<bool> last_solve_converged_{true};
+        mutable std::atomic<int> last_solve_iterations_{0};
+        mutable std::atomic<int> max_inner_iterations_per_solve_{0};
+        mutable std::atomic<std::int64_t> total_solve_time_ns_{0};
 
     private:
         const Eigen::SparseMatrix<double> &M_;
@@ -116,15 +130,15 @@ namespace QEP
         int n_;
         double sigma_;
         LinearSolverType solverType_;
+        Config::SolverParams params_;
 
         Eigen::SparseMatrix<double> S_;  // 移频矩阵 S = K + σC + σ²M
         Eigen::SparseMatrix<double> CM_; // C + σM
 
         SolverVariant solver_;
-        mutable Eigen::VectorXd work1_, work2_;
 
         // 构建目标矩阵 S = K + σC + σ²M (内层关键求解矩阵 inv(S))    CM = C + σM (减少重复计算过程，提高性能)
-        void buildTargetMatrix()
+        void buildTargetMatrix(QuadraticEigenvalueResult *result)
         {
             //------------- 构建S矩阵 ---------------
             auto t_build0 = std::chrono::high_resolution_clock::now();
@@ -163,28 +177,23 @@ namespace QEP
 
             S_.resize(n_, n_);
             S_.setFromTriplets(trips.begin(), trips.end());
-            S_.makeCompressed();
+S_.makeCompressed();
             auto t_build1 = std::chrono::high_resolution_clock::now();
-            double build_time = std::chrono::duration<double>(t_build1 - t_build0).count();
-            if (Config::LOG_LEVEL >= 1)
+            build_time = std::chrono::duration<double>(t_build1 - t_build0).count();
+            if (result)
             {
-
-                std::cout << std::fixed << std::setprecision(3) << "S矩阵构建时间: "
-                          << build_time << std::defaultfloat << " s\n";
+                result->addLog("Build time: " + fmtDouble(build_time) + " s\n");
             }
-            
+
             //------------- 估计S矩阵条件数---------------
-            if (Config::LOG_LEVEL >= 1 && Config::ENABLE_CONDITION_ESTIMATION)
+            if (result && params_.enable_condition_estimation)
             {
                 auto t_cond0 = std::chrono::high_resolution_clock::now();
-                condition_number_S = estimateConditionNumber(S_, false);
-                std::cout << std::scientific << std::setprecision(2) << "S矩阵条件数: "
-                          << condition_number_S << std::defaultfloat << std::endl;
+                condition_number_S = estimateConditionNumber(S_);
+                result->addLog("Condition number: " + fmtDouble(condition_number_S, 2, true) + "\n");
                 auto t_cond1 = std::chrono::high_resolution_clock::now();
-                double cond_time = std::chrono::duration<double>(t_cond1 - t_cond0).count();
-
-                std::cout << std::fixed << std::setprecision(3) << "S矩阵条件数估计时间: "
-                          << cond_time << std::defaultfloat << " s\n";
+                cond_time = std::chrono::duration<double>(t_cond1 - t_cond0).count();
+                result->addLog("Cond. estimation time: " + fmtDouble(cond_time) + " s\n");
             }
             //------------- 预组合矩阵 CM = C + σM--------------
             if (std::abs(sigma_) > 1e-14)
@@ -311,7 +320,7 @@ namespace QEP
         // 统计求解次数，记录求解时间，记录迭代次数,仅针对迭代法
         Eigen::VectorXd solveWithTracking(const Eigen::VectorXd &rhs) const
         {
-            num_solves_++;
+            num_solves_.fetch_add(1);
             auto t_start = std::chrono::high_resolution_clock::now();
 
             Eigen::VectorXd result;
@@ -341,22 +350,28 @@ namespace QEP
                                                                                      Eigen::Lower | Eigen::Upper,
                                                                                      Eigen::IncompleteCholesky<double>>>>(solver_);
                     result = solver->solve(rhs);
-                    last_solve_iterations_ = solver->iterations();
-                    last_solve_converged_ = (solver->info() == Eigen::Success);
-                    total_inner_iterations_ += last_solve_iterations_;
-                    max_inner_iterations_per_solve_ = std::max(max_inner_iterations_per_solve_, last_solve_iterations_);
+                    int iters = solver->iterations();
+                    last_solve_iterations_.store(iters);
+                    last_solve_converged_.store(solver->info() == Eigen::Success);
+                    total_inner_iterations_.fetch_add(iters);
+                    int cur_max = max_inner_iterations_per_solve_.load();
+                    if (iters > cur_max)
+                        max_inner_iterations_per_solve_.store(iters);
                 }
                 else if (std::holds_alternative<
                              std::unique_ptr<Eigen::BiCGSTAB<Eigen::SparseMatrix<double>,
                                                              Eigen::IncompleteLUT<double>>>>(solver_))
                 {
                     auto &solver = std::get<std::unique_ptr<Eigen::BiCGSTAB<Eigen::SparseMatrix<double>,
-                                                                            Eigen::IncompleteLUT<double>>>>(solver_);
+                                                                             Eigen::IncompleteLUT<double>>>>(solver_);
                     result = solver->solve(rhs);
-                    last_solve_iterations_ = solver->iterations();
-                    last_solve_converged_ = (solver->info() == Eigen::Success);
-                    total_inner_iterations_ += last_solve_iterations_;
-                    max_inner_iterations_per_solve_ = std::max(max_inner_iterations_per_solve_, last_solve_iterations_);
+                    int iters = solver->iterations();
+                    last_solve_iterations_.store(iters);
+                    last_solve_converged_.store(solver->info() == Eigen::Success);
+                    total_inner_iterations_.fetch_add(iters);
+                    int cur_max = max_inner_iterations_per_solve_.load();
+                    if (iters > cur_max)
+                        max_inner_iterations_per_solve_.store(iters);
                 }
                 else if (std::holds_alternative<
                              std::unique_ptr<Eigen::GMRES<Eigen::SparseMatrix<double>,
@@ -365,10 +380,13 @@ namespace QEP
                     auto &solver = std::get<std::unique_ptr<Eigen::GMRES<Eigen::SparseMatrix<double>,
                                                                          Eigen::IncompleteLUT<double>>>>(solver_);
                     result = solver->solve(rhs);
-                    last_solve_iterations_ = solver->iterations();
-                    last_solve_converged_ = (solver->info() == Eigen::Success);
-                    total_inner_iterations_ += last_solve_iterations_;
-                    max_inner_iterations_per_solve_ = std::max(max_inner_iterations_per_solve_, last_solve_iterations_);
+                    int iters = solver->iterations();
+                    last_solve_iterations_.store(iters);
+                    last_solve_converged_.store(solver->info() == Eigen::Success);
+                    total_inner_iterations_.fetch_add(iters);
+                    int cur_max = max_inner_iterations_per_solve_.load();
+                    if (iters > cur_max)
+                        max_inner_iterations_per_solve_.store(iters);
                 }
             }
             else
@@ -380,7 +398,7 @@ namespace QEP
             }
 
             auto t_end = std::chrono::high_resolution_clock::now();
-            total_solve_time_ += std::chrono::duration<double>(t_end - t_start).count();
+            total_solve_time_ns_.fetch_add(std::chrono::duration_cast<std::chrono::nanoseconds>(t_end - t_start).count());
 
             return result;
         }
@@ -394,7 +412,8 @@ namespace QEP
         int nev,
         double sigma,
         LinearSolverType solverType,
-        const LinearSolverConfig &config)
+        const LinearSolverConfig &config,
+        const Config::SolverParams &params)
     {
 
         QuadraticEigenvalueResult result;
@@ -439,17 +458,14 @@ namespace QEP
             else if (n < 100000)
                 ncv = std::min(2 * nev + 10, 2 * n);
             else
-                ncv = std::min(2 * nev + 10, std::min(100, 2 * n));
+ncv = std::min(2 * nev + 10, std::min(100, 2 * n));
 
-            if (Config::LOG_LEVEL >= 1)
-            {
-                std::cout << "[" << result.method_used << "] n=" << n
-                          << ", sigma=" << sigma
-                          << ", nev=" << nev << ", ncv=" << ncv << std::endl;
-            }
+            result.addLog("[" + result.method_used + "] n=" + std::to_string(n)
+                + ", sigma=" + fmtDouble(sigma, 6)
+                + ", nev=" + std::to_string(nev) + ", ncv=" + std::to_string(ncv) + "\n");
 
             UnifiedShiftInvertOp op(problem.M, problem.C, problem.K,
-                                    sigma, solverType, config);
+                                    sigma, solverType, config, &result, params);
 
             Spectra::GenEigsSolver<UnifiedShiftInvertOp> eigs(op, nev, ncv);
             eigs.init();
@@ -462,42 +478,37 @@ namespace QEP
 
             result.arnoldi_time = std::chrono::duration<double>(t_iter1 - t_iter0).count();
             result.preprocessing_time = op.preprocessing_time;
+            result.build_time = op.build_time;
+            result.condition_number_S = op.condition_number_S;
+            result.cond_estimation_time = op.cond_time;
 
-            if (Config::LOG_LEVEL >= 1)
-            {
-                std::cout << std::fixed << std::setprecision(3) << "Arnoldi迭代时间: "
-                          << result.arnoldi_time << std::defaultfloat << " s\n";
-                std::cout << "Arnoldi迭代次数: "
-                          << eigs.num_iterations() << std::endl;
-            }
+            result.addLog("Arnoldi time: " + fmtDouble(result.arnoldi_time) + " s\n");
+            result.addLog("Arnoldi iterations: " + std::to_string(eigs.num_iterations()) + "\n");
 
             // 填充内层迭代统计信息，全统计到结果中
-            result.total_inner_solves = op.num_solves_;
-            result.total_inner_iterations = op.total_inner_iterations_;
-            result.max_inner_iterations_per_solve = op.max_inner_iterations_per_solve_;
-            result.avg_inner_iterations = op.num_solves_ > 0 ? static_cast<double>(op.total_inner_iterations_) / op.num_solves_ : 0.0;
+            result.total_inner_solves = op.num_solves_.load();
+            result.total_inner_iterations = op.total_inner_iterations_.load();
+            result.max_inner_iterations_per_solve = op.max_inner_iterations_per_solve_.load();
+            result.avg_inner_iterations = op.num_solves_.load() > 0 ? static_cast<double>(op.total_inner_iterations_.load()) / op.num_solves_.load() : 0.0;
             result.arnoldi_iterations = eigs.num_iterations();
-            result.linear_solve_total_time = op.total_solve_time_;
+            result.linear_solve_total_time = op.total_solve_time_ns_.load() * 1e-9;
 
-            if (Config::LOG_LEVEL >= 2)
-            {
-                std::cout << "内层求解统计:\n";
-                std::cout << "总求解次数: " << result.total_inner_solves << "\n";
-                std::cout << "总迭代次数: " << result.total_inner_iterations << "\n";
-                std::cout << "最大单次迭代次数: " << result.max_inner_iterations_per_solve << "\n";
-                std::cout << "平均迭代次数: " << result.avg_inner_iterations << "\n";
-                std::cout << "内层求解总时间: " << std::fixed << std::setprecision(3) << result.linear_solve_total_time << std::defaultfloat << " s\n";
-                std::cout << "平均单次求解时间: "
-                          << std::fixed << std::setprecision(3) << (op.num_solves_ > 0 ? result.linear_solve_total_time / op.num_solves_ : 0.0) << std::defaultfloat << " s\n";
-            }
+            result.addLog("Inner solver statistics:\n");
+            result.addLog("  Total solves: " + std::to_string(result.total_inner_solves) + "\n");
+            result.addLog("  Total iterations: " + std::to_string(result.total_inner_iterations) + "\n");
+            result.addLog("  Max iterations/solve: " + std::to_string(result.max_inner_iterations_per_solve) + "\n");
+            result.addLog("  Avg iterations/solve: " + fmtDouble(result.avg_inner_iterations) + "\n");
+            result.addLog("  Total solve time: " + fmtDouble(result.linear_solve_total_time) + " s\n");
+            result.addLog("  Avg solve time: " + fmtDouble(op.num_solves_.load() > 0 ? result.linear_solve_total_time / op.num_solves_.load() : 0.0) + " s\n");
 
             bool converged = (eigs.info() == Spectra::CompInfo::Successful);
             result.eigensolver_fully_converged = converged;
 
             if (!converged)
             {
-                std::cerr << "Warning: not fully converged (code="
-                          << static_cast<int>(eigs.info()) << ")\n";
+                std::string warn = "Warning: not fully converged (code="
+                    + std::to_string(static_cast<int>(eigs.info())) + ")";
+                result.addWarning(warn);
             }
 
             if (converged || eigs.info() == Spectra::CompInfo::NotConverging)
@@ -545,18 +556,14 @@ namespace QEP
         }
         catch (const std::exception &e)
         {
-            std::cerr << "Exception: " << e.what() << std::endl;
+            std::string err = std::string("Exception: ") + e.what();
+            result.addWarning(err);
             result.success = false;
             result.warning_message = e.what();
         }
 
         auto t1 = std::chrono::high_resolution_clock::now();
         result.solution_time = std::chrono::duration<double>(t1 - t0).count();
-        if (Config::LOG_LEVEL >= 1)
-        {
-            std::cout << "总求解时间: "
-                      << std::fixed << std::setprecision(3) << result.solution_time << std::defaultfloat << " s" << std::endl;
-        }
 
         return result;
     }

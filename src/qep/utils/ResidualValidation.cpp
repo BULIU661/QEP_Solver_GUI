@@ -1,8 +1,9 @@
-// utils/ResidualValidation.cpp
+//==============================================================================
+//  src/qep/utils/ResidualValidation.cpp  —  残差计算、4 级状态判定、格式化残差表
+//==============================================================================
+
 #include "ResidualValidation.h"
-#include "ConsoleUtils.h" // for padToWidth etc.
-#include "config/GlobalConfig.h"
-#include <iostream>
+#include "config/TableFormatter.h"
 #include <iomanip>
 #include <sstream>
 
@@ -26,116 +27,78 @@ namespace QEP
         return {abs_res, rel_res};
     }
 
-#include <iomanip>
-#include <sstream>
-#include <string>
-
-    // 辅助函数：将字符串居中于指定宽度
-    std::string center(const std::string &s, int width)
+    // 格式化残差表为字符串（核心函数，被 computeAndFormatResiduals 和 GUI 通用）
+    std::pair<double, std::string> formatResidualTable(
+        const Eigen::SparseMatrix<double> &M,
+        const Eigen::SparseMatrix<double> &C,
+        const Eigen::SparseMatrix<double> &K,
+        const QuadraticEigenvalueResult &res)
     {
-        int pad = width - static_cast<int>(s.size());
-        if (pad <= 0)
-            return s.substr(0, width);
-        int left = pad / 2;
-        int right = pad - left;
-        return std::string(left, ' ') + s + std::string(right, ' ');
-    }
-
-    double printResidualTable(const Eigen::SparseMatrix<double> &M,
-                              const Eigen::SparseMatrix<double> &C,
-                              const Eigen::SparseMatrix<double> &K,
-                              const QuadraticEigenvalueResult &res)
-    {
-        if (!Config::PRINT_RESIDUALS)
-            return -1.0;
         int n_eig = static_cast<int>(res.eigenvalues_real.size());
-        if (n_eig == 0)
-            return -1.0;
+        if (n_eig == 0) return {-1.0, ""};
         bool has_vecs = (res.eigenvectors.cols() > 0);
 
-        const int w_id = 4;   // 编号宽度
-        const int w_eig = 27; // 特征值宽度
-        const int w_abs = 12; // 绝对残差宽度
-        const int w_rel = 12; // 相对残差宽度
-        const int w_stat = 6; // 状态宽度
-
-        // 打印表头（居中或左对齐，这里统一左对齐，但特征值列通过后续居中）
-        std::cout << "\n  残差验证 (共" << n_eig << "个特征值):\n";
-        std::cout << std::left
-                  << std::setw(10 + w_id) << "   #"
-                  << " " << std::setw(w_eig - 3) << "特征值"
-                  << " " << std::setw(w_abs + 4) << "绝对残差"
-                  << " " << std::setw(w_rel) << "相对残差"
-                  << " " << std::setw(w_stat) << "   状态"
-                  << "\n";
+        fmt::TableBuilder tbl;
+        tbl.addCol("#", 3, fmt::Align::Right);
+        tbl.addCol("Eigenvalue", 26, fmt::Align::Center);
+        tbl.addCol("Abs. Residual", 14, fmt::Align::Right);
+        tbl.addCol("Rel. Residual", 14, fmt::Align::Right);
+        tbl.addCol("Status", 12, fmt::Align::Center);
 
         double max_rel = 0.0;
         for (int i = 0; i < n_eig; ++i)
         {
             std::complex<double> lambda(res.eigenvalues_real(i), res.eigenvalues_imag(i));
             double abs_res = -1.0, rel_res = -1.0;
-            std::string status = "无向量";
+            const char *status = "No vec";
+
             if (has_vecs && i < res.eigenvectors.cols())
             {
                 Eigen::VectorXcd xvec = res.eigenvectors.col(i);
                 double xnorm = xvec.norm();
-                if (xnorm > 1e-14)
-                    xvec /= xnorm;
+                if (xnorm > 1e-14) xvec /= xnorm;
                 auto residuals = computeResiduals(M, C, K, lambda, xvec);
                 abs_res = residuals.first;
                 rel_res = residuals.second;
-                status = (rel_res < Config::CHECK_TOLERANCE) ? "OK" : "FAIL";
+                status = fmt::residualStatus(rel_res);
                 max_rel = std::max(max_rel, rel_res);
             }
 
-            // 构造特征值原始字符串（不带宽度填充）
-            std::ostringstream tmp;
-            tmp << std::fixed << std::setprecision(4);
+            // 特征值字符串
+            char eigBuf[64], absBuf[32], relBuf[32];
             if (std::abs(lambda.imag()) < 1e-8)
-            {
-                tmp << lambda.real();
-            }
+                snprintf(eigBuf, sizeof(eigBuf), "%.6g", lambda.real());
             else if (std::abs(lambda.real()) < 1e-8)
-            {
-                tmp << lambda.imag() << "i";
-            }
+                snprintf(eigBuf, sizeof(eigBuf), "%.6gi", lambda.imag());
             else
-            {
-                tmp << lambda.real()
-                    << (lambda.imag() >= 0 ? "+" : "")
-                    << lambda.imag() << "i";
-            }
-            std::string raw_eig = tmp.str();
-            // 居中特征值字符串
-            std::string eig_str = center(raw_eig, w_eig);
+                snprintf(eigBuf, sizeof(eigBuf), "%.6g%+.6gi", lambda.real(), lambda.imag());
 
-            // 输出一行：编号（右对齐）、特征值（居中）、残差（右对齐）、状态（右对齐）
-            std::cout << std::right << std::setw(w_id) << i + 1
-                      << " " << eig_str
-                      << " ";
-            if (abs_res >= 0)
-            {
-                std::cout << std::scientific << std::setprecision(2)
-                          << std::right << std::setw(w_abs) << abs_res
-                          << " " << std::right << std::setw(w_rel) << rel_res
-                          << " " << std::right << std::setw(w_stat) << status;
+            if (abs_res >= 0) {
+                snprintf(absBuf, sizeof(absBuf), "%.2e", abs_res);
+                snprintf(relBuf, sizeof(relBuf), "%.2e", rel_res);
             }
-            else
-            {
-                std::cout << std::setw(w_abs) << "N/A"
-                          << " " << std::setw(w_rel) << "N/A"
-                          << " " << std::right << std::setw(w_stat) << status;
-            }
-            std::cout << "\n";
+
+            tbl.addRow({
+                std::to_string(i + 1),
+                eigBuf,
+                abs_res >= 0 ? absBuf : "N/A",
+                rel_res >= 0 ? relBuf : "N/A",
+                status
+            });
         }
 
-        if (has_vecs)
-        {
-            std::cout << std::fixed << std::setprecision(2)
-                      << "  最大相对残差: " << std::scientific << max_rel
-                      << (max_rel < 1e-6 ? "  => PASSED\n" : "  => FAILED\n");
-        }
-        return has_vecs ? max_rel : -1.0;
+        return {has_vecs ? max_rel : -1.0, tbl.render(2)};
     }
+
+    std::pair<double, std::string> computeAndFormatResiduals(
+        const Eigen::SparseMatrix<double> &M,
+        const Eigen::SparseMatrix<double> &C,
+        const Eigen::SparseMatrix<double> &K,
+        const QuadraticEigenvalueResult &res)
+    {
+        auto result = formatResidualTable(M, C, K, res);
+        return result;
+    }
+
 
 } // namespace QEP

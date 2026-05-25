@@ -1,4 +1,7 @@
-// include/qep/QEP.h
+//==============================================================================
+//  include/qep/QEP.h  —  QEP 求解器主公共 API（数据结构、求解接口、矩阵 IO）
+//==============================================================================
+
 #ifndef QEP_H
 #define QEP_H
 
@@ -7,6 +10,7 @@
 #include <complex>
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
+#include "config/SolverParams.h"
 
 namespace QEP {
 
@@ -17,7 +21,6 @@ enum class MatrixDefiniteness {
     SymmetricIndefinite,
     SymmetricNegativeDefinite,
     NonSymmetric,
-    NumericallySingular,
     Unknown
 };
 
@@ -50,15 +53,37 @@ struct QuadraticEigenvalueResult {
     double condition_number_K = 0.0;
 
     // 内层迭代求解器统计信息
-    int total_inner_solves = 0;           //
-    int total_inner_iterations = 0;       // 
-    int max_inner_iterations_per_solve = 0; // 
-    double avg_inner_iterations = 0.0;    // 
-    int arnoldi_iterations = 0;           // 
-    double linear_solve_total_time = 0.0; // 
+    int total_inner_solves = 0;
+    int total_inner_iterations = 0;
+    int max_inner_iterations_per_solve = 0;
+    double avg_inner_iterations = 0.0;
+    int arnoldi_iterations = 0;
+    double linear_solve_total_time = 0.0;
+
+    // 构建/预处理时间细分（从 UnifiedShiftInvertOp 获取）
+    double build_time = 0.0;
+    double condition_number_S = 0.0;
+    double cond_estimation_time = 0.0;
+
+    // 日志消息缓冲区（替代直接 cout，由调用方决定如何展示）
+    std::vector<std::string> log_messages;
+    std::vector<std::string> warning_messages;
+
+    // 逐特征值的残差（由 SolverWorker 预计算，GUI 直接使用）
+    std::vector<double> residuals_abs;
+    std::vector<double> residuals_rel;
+    std::vector<std::string> residual_status; // "OK" / "FAIL" / "N/A"
+
+    // 便捷方法：添加日志消息
+    void addLog(const std::string &msg) {
+        log_messages.push_back(msg);
+    }
+    void addWarning(const std::string &msg) {
+        warning_messages.push_back(msg);
+    }
 };
 
-    // ========== 内层线性求解器类型 ==========
+// ========== 内层线性求解器类型 ==========
 enum class LinearSolverType {
     SparseLU,
     PardisoLU,
@@ -70,10 +95,10 @@ enum class LinearSolverType {
 
 struct LinearSolverConfig {
     LinearSolverType type = LinearSolverType::PardisoLU;
-    double inner_tolerance = 1e-10;
+    double inner_tolerance = 1e-8;
     int inner_maxIterations = 1000;
     int outer_maxIterations = 1000;
-    double outer_tolerance = 1e-8;
+    double outer_tolerance = 1e-6;
     int restart = 100;
     int fillFactor = 10;
     double dropTol = 1e-4;
@@ -91,6 +116,7 @@ struct CaseResult {
     double time;
     double max_rel_residual;
     std::string validation;
+    std::vector<std::string> logs;
 };
 
    enum class MatrixStorageType
@@ -109,25 +135,21 @@ QuadraticEigenvalueResult solveQEP_Unified(
     int nev,
     double sigma,
     LinearSolverType solverType,
-    const LinearSolverConfig &config = {});
+    const LinearSolverConfig &config = {},
+    const Config::SolverParams &params = {});
 
 // ========== IO 函数 ==========
 bool convertTextCSRtoBinary(const std::string &text_file, const std::string &bin_file);
-void convertBinaryFiles(const std::vector<std::pair<std::string, std::string>> &files);
 Eigen::SparseMatrix<double> readBinaryCSR(const std::string &bin_file);
-Eigen::SparseMatrix<double> read_sparse_matrix_csr(const std::string &filename);
-Eigen::SparseMatrix<double> read_sparse_matrix_coo(const std::string &filename);
 Eigen::MatrixXd read_dense_matrix(const std::string &filename);
 
 
 // ========== 矩阵属性检查 ==========
 bool isSymmetric(const Eigen::SparseMatrix<double> &A);
-bool isPositiveDefinite(const Eigen::SparseMatrix<double> &A);
-double estimateConditionNumber(const Eigen::SparseMatrix<double> &A,bool is_print);
-void estimateAndWarnConditionNumber(const Eigen::SparseMatrix<double> &K,bool is_print);
+double estimateConditionNumber(const Eigen::SparseMatrix<double> &A);
 MatrixDefiniteness classifyDefiniteness(const Eigen::SparseMatrix<double> &A, double tol);
-void checkMatrixProperties(const Eigen::SparseMatrix<double> &mat, const std::string &name);
-  void PrintMatrixProperties(const Eigen::SparseMatrix<double> &mat, const std::string &name, double cond_est );
+std::string printMatrixProperties(const Eigen::SparseMatrix<double> &mat, const std::string &name, double cond_est );
+
 MatrixStorageType checkMatrixStorage(const Eigen::SparseMatrix<double> &A);
 
 // ========== 残差验证 ==========
@@ -136,10 +158,20 @@ std::pair<double, double> computeResiduals(const Eigen::SparseMatrix<double> &M,
                                            const Eigen::SparseMatrix<double> &K,
                                            std::complex<double> lambda,
                                            const Eigen::VectorXcd &x);
-double printResidualTable(const Eigen::SparseMatrix<double> &M,
-                          const Eigen::SparseMatrix<double> &C,
-                          const Eigen::SparseMatrix<double> &K,
-                          const QuadraticEigenvalueResult &res);
+// 计算并格式化残差表（纯计算，不输出到 cout），返回 <最大相对残差, 格式化表格字符串>
+std::pair<double, std::string> computeAndFormatResiduals(
+    const Eigen::SparseMatrix<double> &M,
+    const Eigen::SparseMatrix<double> &C,
+    const Eigen::SparseMatrix<double> &K,
+    const QuadraticEigenvalueResult &res);
+
+// 格式化残差表为字符串（GUI 使用），返回 <最大相对残差, 格式化表格字符串>
+std::pair<double, std::string> formatResidualTable(
+    const Eigen::SparseMatrix<double> &M,
+    const Eigen::SparseMatrix<double> &C,
+    const Eigen::SparseMatrix<double> &K,
+    const QuadraticEigenvalueResult &res);
+
 
 // ========== 测试框架 ==========
 QuadraticEigenvalueProblem createTestProblemFromFiles(
@@ -147,18 +179,10 @@ QuadraticEigenvalueProblem createTestProblemFromFiles(
     const std::string &M_file,
     const std::string &C_file,
     const std::string &K_file,
-    bool is_sparse);
-
-// ========== 工具函数 ==========
-long getCurrentRSS();
-bool isVectorHealthy(const Eigen::VectorXd &v, const std::string &name = "vector");
-int getDisplayWidth(const std::string &str);
-std::string truncateToWidth(const std::string &str, int maxDisplayWidth);
-std::string padToWidth(const std::string &str, int targetWidth);
-std::string padToWidthRight(const std::string &str, int targetWidth);
-
+    bool is_sparse,
+    const Config::SolverParams &params = {},
+    bool overwrite = false);
 
 } // namespace QEP
 
 #endif // QEP_H
-

@@ -1,6 +1,9 @@
-// io/MatrixIO.cpp
+//==============================================================================
+//  src/qep/io/MatrixIO.cpp  —  CSR/COO/二进制/文本格式矩阵读写实现
+//==============================================================================
+
 #include "io/MatrixIO.h"
-#include "config/GlobalConfig.h"
+#include "config/ConfigManager.h"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -46,11 +49,11 @@ namespace QEP
     {
         for (const auto &pair : files)
         {
-            std::cout << "转换" << pair.first << "到二进制格式" << pair.second << "...\n";
+            std::cout << "Converting" << pair.first << "to binary format" << pair.second << "...\n";
             auto start = std::chrono::high_resolution_clock::now();
             QEP::convertTextCSRtoBinary(pair.first, pair.second);
             auto end = std::chrono::high_resolution_clock::now();
-            std::cout << "耗时: " << std::chrono::duration<double>(end - start).count() << " 秒\n";
+            std::cout << "Time: " << std::chrono::duration<double>(end - start).count() << " s\n";
         }
     }
 
@@ -61,7 +64,7 @@ namespace QEP
     std::ifstream infile(text_file);
     if (!infile.is_open())
     {
-        std::cerr << "无法打开文本文件: " << text_file << std::endl;
+        std::cerr << "Cannot open text file: " << text_file << std::endl;
         return false;
     }
 
@@ -78,7 +81,7 @@ namespace QEP
     ss >> n;
     if (ss.fail() || n <= 0)
     {
-        std::cerr << "无效的矩阵维度" << std::endl;
+        std::cerr << "Invalid matrix dimension" << std::endl;
         return false;
     }
 
@@ -89,7 +92,7 @@ namespace QEP
         infile >> row_ptr[i];
         if (infile.fail())
         {
-            std::cerr << "读取行指针失败" << std::endl;
+            std::cerr << "Failed to read row pointer" << std::endl;
             return false;
         }
     }
@@ -105,7 +108,7 @@ namespace QEP
         infile >> col_idx[k];
         if (infile.fail())
         {
-            std::cerr << "读取列索引失败" << std::endl;
+            std::cerr << "Failed to read column index" << std::endl;
             return false;
         }
         // 若为 1-based，立即转换为 0-based
@@ -119,7 +122,7 @@ namespace QEP
         infile >> values[k];
         if (infile.fail())
         {
-            std::cerr << "读取数值失败" << std::endl;
+            std::cerr << "Failed to read values" << std::endl;
             return false;
         }
     }
@@ -164,7 +167,7 @@ namespace QEP
     std::ofstream outfile(bin_file, std::ios::binary);
     if (!outfile.is_open())
     {
-        std::cerr << "无法创建二进制文件: " << bin_file << std::endl;
+        std::cerr << "Cannot create binary file: " << bin_file << std::endl;
         return false;
     }
 
@@ -175,44 +178,38 @@ namespace QEP
     outfile.write(reinterpret_cast<const char *>(values.data()), nnz * sizeof(double));
 
     outfile.close();
-    std::cout << "转换成功,二进制文件: " << bin_file << " (nnz=" << nnz << ")" << std::endl;
+    std::cout << "Converted: " << bin_file << " (nnz=" << nnz << ")" << std::endl;
     return true;
 }
 
     // ---------- readBinaryCSR ----------
     Eigen::SparseMatrix<double> readBinaryCSR(const std::string &bin_file)
     {
-        auto t_0 = std::chrono::high_resolution_clock::now();
         std::ifstream infile(bin_file, std::ios::binary);
         if (!infile.is_open())
         {
-            std::cerr << "无法打开二进制文件: " << bin_file << std::endl;
+            std::cerr << "Cannot open binary file: " << bin_file << std::endl;
             return {};
         }
         infile.seekg(0, std::ios::end);
         std::streamsize file_size = infile.tellg();
         infile.seekg(0, std::ios::beg);
-        if (Config::LOG_LEVEL >= 3)
-            std::cout << "二进制文件大小: " << file_size << " 字节" << std::endl;
 
         int n = 0, nnz = 0;
         if (!infile.read(reinterpret_cast<char *>(&n), sizeof(int)))
         {
-            std::cerr << "读取矩阵维度失败" << std::endl;
+            std::cerr << "Failed to read matrix dimension" << std::endl;
             return {};
         }
         if (!infile.read(reinterpret_cast<char *>(&nnz), sizeof(int)))
         {
-            std::cerr << "读取非零元素个数失败" << std::endl;
+            std::cerr << "Failed to read nnz count" << std::endl;
             return {};
         }
-        if (Config::LOG_LEVEL >= 3)
-            std::cout << "矩阵维度 n = " << n << ", nnz = " << nnz << std::endl;
-
         std::streamsize expected_size = sizeof(int) * 2 + (n + 1) * sizeof(int) + nnz * sizeof(int) + nnz * sizeof(double);
         if (file_size < expected_size)
         {
-            std::cerr << "错误:文件大小 " << file_size << " 小于预期 " << expected_size << std::endl;
+            std::cerr << "Error: file size " << file_size << " < expected " << expected_size << std::endl;
             return {};
         }
 
@@ -221,17 +218,17 @@ namespace QEP
         std::vector<double> values(nnz);
         if (!infile.read(reinterpret_cast<char *>(row_ptr.data()), (n + 1) * sizeof(int)))
         {
-            std::cerr << "读取行指针失败" << std::endl;
+            std::cerr << "Failed to read row pointer" << std::endl;
             return {};
         }
         if (!infile.read(reinterpret_cast<char *>(col_idx.data()), nnz * sizeof(int)))
         {
-            std::cerr << "读取列索引失败" << std::endl;
+            std::cerr << "Failed to read column index" << std::endl;
             return {};
         }
         if (!infile.read(reinterpret_cast<char *>(values.data()), nnz * sizeof(double)))
         {
-            std::cerr << "读取数值失败" << std::endl;
+            std::cerr << "Failed to read values" << std::endl;
             return {};
         }
         infile.close();
@@ -245,7 +242,7 @@ namespace QEP
                 int j = col_idx[k];
                 if (j < 0 || j >= n)
                 {
-                    std::cerr << "无效列索引: " << j << std::endl;
+                    std::cerr << "Invalid col index: " << j << std::endl;
                     return {};
                 }
                 triplets.emplace_back(i, j, values[k]);
@@ -253,24 +250,18 @@ namespace QEP
         }
         Eigen::SparseMatrix<double> mat(n, n);
         mat.setFromTriplets(triplets.begin(), triplets.end());
-        auto t_1 = std::chrono::high_resolution_clock::now();
-        if (Config::LOG_LEVEL >= 3)
-            std::cout << "读取时间: " << std::chrono::duration<double>(t_1 - t_0).count() << " s\n";
         return mat;
     }
 
     // ---------- read_sparse_matrix_csr ----------
     Eigen::SparseMatrix<double> read_sparse_matrix_csr(const std::string &filename)
     {
-        auto start_time = std::chrono::high_resolution_clock::now();
         std::ifstream file(filename);
         if (!file.is_open())
         {
-            std::cerr << "错误: 无法打开文件 " << filename << std::endl;
+            std::cerr << "Error: cannot open file " << filename << std::endl;
             return {};
         }
-        std::cout << "开始读取CSR格式稀疏矩阵: " << filename << std::endl;
-
         std::string line;
         while (std::getline(file, line))
         {
@@ -283,7 +274,7 @@ namespace QEP
         ss >> n;
         if (ss.fail() || n <= 0)
         {
-            std::cerr << "错误: 无法读取矩阵维度或维度无效" << std::endl;
+            std::cerr << "Error: invalid matrix dimension" << std::endl;
             return {};
         }
 
@@ -293,7 +284,7 @@ namespace QEP
             file >> row_ptr[i];
             if (file.fail())
             {
-                std::cerr << "错误: 读取行指针时失败,位置 " << i << std::endl;
+                std::cerr << "Error: failed to read row pointer at " << i << std::endl;
                 return {};
             }
         }
@@ -306,7 +297,7 @@ namespace QEP
             file >> col_idx[k];
             if (file.fail())
             {
-                std::cerr << "错误: 读取列索引时失败,位置 " << k << std::endl;
+                std::cerr << "Error: failed to read col index at " << k << std::endl;
                 return {};
             }
         }
@@ -316,30 +307,27 @@ namespace QEP
             file >> values[k];
             if (file.fail())
             {
-                std::cerr << "错误: 读取数值时失败,位置 " << k << std::endl;
+                std::cerr << "Error: failed to read value at " << k << std::endl;
                 return {};
             }
         }
         file.close();
 
-        Eigen::SparseMatrix<double> mat(n, n);
-        mat.reserve(nnz);
-        for (int i = 0; i < n; ++i)
+        // 1-based to 0-based conversion
+        if (is_one_based)
         {
-            int start = row_ptr[i] - (is_one_based ? 1 : 0);
-            int end = row_ptr[i + 1] - (is_one_based ? 1 : 0);
-            for (int k = start; k < end; ++k)
-            {
-                int col = col_idx[k];
-                if (is_one_based)
-                    col--;
-                mat.insert(i, col) = values[k];
-            }
+            for (int i = 0; i <= n; ++i)
+                row_ptr[i]--;
+            for (int k = 0; k < nnz; ++k)
+                col_idx[k]--;
         }
-        mat.makeCompressed();
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-        std::cout << "读取耗时: " << elapsed_ms << " ms" << std::endl;
+        std::vector<Eigen::Triplet<double>> trips;
+        trips.reserve(nnz);
+        for (int i = 0; i < n; ++i)
+            for (int k = row_ptr[i]; k < row_ptr[i + 1]; ++k)
+                trips.emplace_back(i, col_idx[k], values[k]);
+        Eigen::SparseMatrix<double> mat(n, n);
+        mat.setFromTriplets(trips.begin(), trips.end());
         return mat;
     }
 
@@ -349,7 +337,7 @@ namespace QEP
         std::ifstream file(filename);
         if (!file.is_open())
         {
-            std::cerr << "错误: 无法打开文件 " << filename << std::endl;
+            std::cerr << "Error: cannot open file " << filename << std::endl;
             return {};
         }
         std::string line;
@@ -372,12 +360,21 @@ namespace QEP
             triplets.emplace_back(row, col, value);
         }
         file.close();
+
+        // Matrix Market standard uses 1-based indexing.  Detect and convert to 0-based.
+        if (nnz > 0)
+        {
+            bool is_one_based = (triplets[0].row() >= 1 && triplets[0].col() >= 1);
+            if (is_one_based)
+            {
+                for (auto &t : triplets)
+                    t = Eigen::Triplet<double>(t.row() - 1, t.col() - 1, t.value());
+            }
+        }
+
         Eigen::SparseMatrix<double> matrix(rows, cols);
         matrix.setFromTriplets(triplets.begin(), triplets.end());
         matrix.makeCompressed();
-        std::cout << "读取COO格式稀疏矩阵: " << filename
-                  << ", 维度: " << rows << "x" << cols
-                  << ", 非零元素: " << nnz << std::endl;
         return matrix;
     }
 
@@ -423,7 +420,7 @@ namespace QEP
         // ==================== 1. 读取输入 CSR 文件（1-based 索引） ====================
         std::ifstream fin(infile);
         if (!fin)
-            throw std::runtime_error("无法打开输入文件: " + infile);
+            throw std::runtime_error("Cannot open input file: " + infile);
 
         int n;
         fin >> n;                             // 矩阵维度
@@ -472,12 +469,12 @@ namespace QEP
         A_full.makeCompressed(); // 再次压缩（可选）
 
         int nnz_full = A_full.nonZeros();
-        std::cout << "原始非零元: " << nnz_half << "，完整非零元: " << nnz_full << std::endl;
+        std::cout << "Original nnz: " << nnz_half << ", Full nnz: " << nnz_full << std::endl;
 
         // ==================== 4. 输出为 CSR 文件（1-based 索引） ====================
         std::ofstream fout(outfile);
         if (!fout)
-            throw std::runtime_error("无法创建输出文件: " + outfile);
+            throw std::runtime_error("Cannot create output file: " + outfile);
 
         fout << n << "\n";
 

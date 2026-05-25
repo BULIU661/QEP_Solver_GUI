@@ -13,6 +13,7 @@
 build/
 build_*/
 cmake-build-*/
+cmake/lib/
 
 # ========== 二进制数据文件 ==========
 *.bin
@@ -41,6 +42,11 @@ Problems/**/*.vtk
 *.swo
 *~
 .DS_Store
+
+# ========== Qt 自动生成文件 ==========
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
 
 # ========== 临时文件 ==========
 paper/
