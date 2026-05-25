@@ -85,7 +85,7 @@ public:
     AppConfig    toAppConfig() const;
 
 private:
-    ConfigManager() = default;
+    ConfigManager() : data_(std::make_unique<nlohmann::json>()) {}
     ~ConfigManager() = default;
     ConfigManager(const ConfigManager &) = delete;
     ConfigManager &operator=(const ConfigManager &) = delete;

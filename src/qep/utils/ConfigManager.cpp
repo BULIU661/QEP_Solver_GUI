@@ -39,7 +39,7 @@ static std::vector<std::string> getConfigSearchPaths()
             if (parent == dir) break; // 到达根目录
             dir = parent;
         }
-    } catch (...) {}
+    } catch (const std::filesystem::filesystem_error &) {}
 
     return paths;
 }
@@ -49,10 +49,6 @@ static std::vector<std::string> getConfigSearchPaths()
 bool ConfigManager::load(const std::string &path)
 {
     auto &inst = instance();
-
-    // Always initialize with empty JSON so data() is never null
-    if (!inst.data_)
-        inst.data_ = std::make_unique<nlohmann::json>();
 
     std::string config_path = path;
     if (config_path.empty())
@@ -365,7 +361,9 @@ std::vector<TestCase> ConfigManager::testCases() const
             };
             scanDir(basePath);
         }
-    } catch (...) {}
+    } catch (const std::filesystem::filesystem_error &e) {
+        std::cerr << "[ConfigManager] Filesystem error scanning problems: " << e.what() << "\n";
+    }
 
     if (cases.empty())
         std::cerr << "[ConfigManager] No problems found. Place M.bin/C.bin/K.bin files under "

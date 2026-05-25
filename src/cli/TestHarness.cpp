@@ -5,7 +5,6 @@
 #include "TestHarness.h"
 #include <iostream>
 #include <sstream>
-#include <cstdio>
 #include <chrono>
 #include <iomanip>
 #include <algorithm>
@@ -79,16 +78,17 @@ CaseResult runAndReport(const std::string &method_name,
                 double im = result.eigenvalues_imag(i);
                 double absVal = std::sqrt(re * re + im * im);
 
-                char eigBuf[64], absBuf[32];
+                std::ostringstream eigStr, absStr;
                 if (std::abs(im) < 1e-8)
-                    snprintf(eigBuf, sizeof(eigBuf), "%.6g", re);
+                    eigStr << std::setprecision(6) << re;
                 else if (std::abs(re) < 1e-8)
-                    snprintf(eigBuf, sizeof(eigBuf), "%.6gi", im);
+                    eigStr << std::setprecision(6) << im << 'i';
                 else
-                    snprintf(eigBuf, sizeof(eigBuf), "%.6g%+.6gi", re, im);
-                snprintf(absBuf, sizeof(absBuf), "%.6g", absVal);
+                    eigStr << std::setprecision(6) << re
+                           << std::showpos << im << "i" << std::noshowpos;
+                absStr << std::setprecision(6) << absVal;
 
-                eigTbl.addRow({std::to_string(i + 1), eigBuf, absBuf});
+                eigTbl.addRow({std::to_string(i + 1), eigStr.str(), absStr.str()});
             }
             if (cr.n_eig > show)
                 eigTbl.addRow({"", "(" + std::to_string(cr.n_eig - show) + " more)", ""});
@@ -99,7 +99,7 @@ CaseResult runAndReport(const std::string &method_name,
 
         // ---- 残差验证表 ----
         {
-            auto [maxRel, tableStr] = computeAndFormatResiduals(problem.M, problem.C, problem.K, result);
+            auto [maxRel, tableStr] = formatResidualTable(problem.M, problem.C, problem.K, result);
             cr.max_rel_residual = maxRel;
             if (appCfg.print_residuals && !tableStr.empty())
             {
@@ -168,10 +168,13 @@ std::vector<CaseResult> processCase(const Config::TestCase &tc,
 
     std::cout << fmt::secHdr("Case: " + tc.name) << "\n";
 
-    auto problem = createTestProblemFromFiles(tc.name, tc.M_file, tc.C_file, tc.K_file, tc.is_sparse, solParams, appCfg.overwrite);
+    auto problem = createTestProblemFromFiles(tc.name, tc.M_file, tc.C_file, tc.K_file, tc.is_sparse, solParams, appCfg.auto_convert, appCfg.overwrite);
     if (problem.dimension == 0)
     {
-        std::cerr << "  Matrix load failed, skipping case.\n";
+        std::cerr << "  Matrix load failed";
+        if (!problem.load_error.empty())
+            std::cerr << ": " << problem.load_error;
+        std::cerr << ", skipping case.\n";
         std::vector<CaseResult> failed;
         auto methods = Config::getSolverMethods(solParams);
         for (const auto &m : methods)
@@ -218,6 +221,13 @@ std::vector<CaseResult> processCase(const Config::TestCase &tc,
         std::cout << std::endl;
     }
 
+    // 将问题元数据写回 problem.json
+    {
+        std::string problemDir = std::filesystem::path(tc.M_file).parent_path().string();
+        auto meta = computeProblemMetadata(problem, needCond);
+        writeProblemJson(problemDir, meta);
+    }
+
     auto allMethods = Config::getSolverMethods(solParams);
     std::vector<Config::SolverMethod> methods;
     for (const auto &m : allMethods)
@@ -243,7 +253,7 @@ void printSummaryReport(const std::vector<Config::TestCase> &cases,
                         double sigma)
 {
     fmt::TableBuilder tbl;
-    tbl.addCol("Case", 18, fmt::Align::Left);
+    tbl.addCol("Case", 26, fmt::Align::Left);
     tbl.addCol("Method", 14, fmt::Align::Left);
     tbl.addCol("Status", 7, fmt::Align::Center);
     tbl.addCol("#Eig", 5, fmt::Align::Right);

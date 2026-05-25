@@ -7,6 +7,8 @@
 #include <Eigen/Sparse>
 #include <Eigen/Dense>
 #include <fstream>
+#include <iomanip>
+#include <filesystem>
 
 // QuadraticEigenvalueProblem 结构体包含以下字段：
     // Eigen::SparseMatrix<double> M;
@@ -28,11 +30,12 @@ QuadraticEigenvalueProblem createTestProblemFromFiles(
     const std::string &K_file,
     bool is_sparse,
     const Config::SolverParams &params,
+    bool auto_convert,
     bool overwrite) {
     QuadraticEigenvalueProblem problem;
     problem.name = name;
 
-    // 自动将 .txt 转为 .bin（加载 .txt 必须先转换，无开关）
+    // auto_convert 控制是否自动将 .txt 转为 .bin；overwrite 控制是否覆盖已有 .bin
     auto ensureBinary = [&](const std::string &filePath) -> std::string {
         if (filePath.size() < 4) return filePath;
         std::string ext = filePath.substr(filePath.size() - 4);
@@ -40,10 +43,23 @@ QuadraticEigenvalueProblem createTestProblemFromFiles(
         std::string binPath = base + ".bin";
         std::string txtPath = base + ".txt";
 
-        // 已经是 .bin → 检查是否存在，不存在则尝试从 .txt 转换
+        // auto_convert 关闭：不做任何转换，直接返回原路径
+        if (!auto_convert)
+            return filePath;
+
+        // 已经是 .bin → 检查是否存在
         if (ext == ".bin" || ext == ".BIN") {
             std::ifstream test(binPath);
-            if (test.good()) return binPath;
+            if (test.good()) {
+                // overwrite 开启时，若 .txt 存在则重新转换
+                if (overwrite) {
+                    std::ifstream txtTest(txtPath);
+                    if (txtTest.good()) {
+                        convertTextCSRtoBinary(txtPath, binPath);
+                    }
+                }
+                return binPath;
+            }
             // .bin 不存在，尝试从 .txt 创建
             std::ifstream txtTest(txtPath);
             if (txtTest.good()) {
@@ -88,6 +104,7 @@ QuadraticEigenvalueProblem createTestProblemFromFiles(
         }
     } catch (const std::exception &e) {
         problem.dimension = 0;
+        problem.load_error = std::string("Matrix load failed: ") + e.what();
         return problem;
     }
 
@@ -98,6 +115,106 @@ QuadraticEigenvalueProblem createTestProblemFromFiles(
     }
 
     return problem;
+}
+
+nlohmann::json computeProblemMetadata(
+    const QuadraticEigenvalueProblem &problem,
+    bool compute_expensive)
+{
+    nlohmann::json meta;
+
+    // 基础信息（零开销）
+    meta["dimension"] = problem.dimension;
+    meta["M_nnz"] = static_cast<int>(problem.M.nonZeros());
+    meta["C_nnz"] = static_cast<int>(problem.C.nonZeros());
+    meta["K_nnz"] = static_cast<int>(problem.K.nonZeros());
+
+    // 存储类型 → 字符串
+    auto storageToStr = [](MatrixStorageType s) -> std::string {
+        switch (s) {
+            case MatrixStorageType::FullSymmetric:    return "FullSymmetric";
+            case MatrixStorageType::FullNonSymmetric: return "FullNonSymmetric";
+            case MatrixStorageType::UpperTriangular:  return "UpperTriangular";
+            case MatrixStorageType::LowerTriangular:  return "LowerTriangular";
+            case MatrixStorageType::NonSquare:        return "NonSquare";
+            default: return "Unknown";
+        }
+    };
+
+    // 定性 → 字符串
+    auto defToStr = [](MatrixDefiniteness d) -> std::string {
+        switch (d) {
+            case MatrixDefiniteness::SymmetricPositiveDefinite:     return "SPD";
+            case MatrixDefiniteness::SymmetricPositiveSemiDefinite: return "SPSD";
+            case MatrixDefiniteness::SymmetricIndefinite:           return "Indefinite";
+            case MatrixDefiniteness::SymmetricNegativeDefinite:     return "NegativeDefinite";
+            case MatrixDefiniteness::NonSymmetric:                  return "NonSymmetric";
+            case MatrixDefiniteness::Unknown:                       return "Unknown";
+            default: return "Unknown";
+        }
+    };
+
+    // 逐矩阵计算性质
+    auto computeProps = [&](const Eigen::SparseMatrix<double> &mat) -> nlohmann::json {
+        nlohmann::json props;
+        bool sym = isSymmetric(mat);
+        props["symmetric"] = sym;
+        props["storage"] = storageToStr(checkMatrixStorage(mat));
+        if (sym)
+            props["definiteness"] = defToStr(classifyDefiniteness(mat, 1e-12));
+        return props;
+    };
+
+    meta["M_properties"] = computeProps(problem.M);
+    meta["C_properties"] = computeProps(problem.C);
+    meta["K_properties"] = computeProps(problem.K);
+
+    // 条件数（可能开销较大，由 compute_expensive 门控）
+    nlohmann::json cond;
+    if (compute_expensive) {
+        cond["M"] = estimateConditionNumber(problem.M);
+        cond["C"] = estimateConditionNumber(problem.C);
+        cond["K"] = problem.condition_number_K > 0.0
+                     ? problem.condition_number_K
+                     : estimateConditionNumber(problem.K);
+    } else {
+        cond["M"] = -1.0;
+        cond["C"] = -1.0;
+        cond["K"] = problem.condition_number_K;
+    }
+    meta["condition_numbers"] = cond;
+
+    return meta;
+}
+
+bool writeProblemJson(const std::string &directory,
+                      const nlohmann::json &newData)
+{
+    namespace fs = std::filesystem;
+    fs::path jsonPath = fs::path(directory) / "problem.json";
+
+    // 与已有 problem.json 合并
+    nlohmann::json combined;
+    if (fs::exists(jsonPath)) {
+        try {
+            std::ifstream in(jsonPath);
+            in >> combined;
+        } catch (const std::exception &) {
+            combined = nlohmann::json::object();
+        }
+    }
+
+    // 写入新字段
+    for (auto it = newData.begin(); it != newData.end(); ++it)
+        combined[it.key()] = it.value();
+
+    try {
+        std::ofstream out(jsonPath);
+        out << std::setw(4) << combined << std::endl;
+        return true;
+    } catch (const std::exception &) {
+        return false;
+    }
 }
 
 } // namespace QEP

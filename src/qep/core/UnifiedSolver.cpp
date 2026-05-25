@@ -45,6 +45,15 @@ namespace QEP
         std::unique_ptr<Eigen::GMRES<Eigen::SparseMatrix<double>,
                                      Eigen::IncompleteLUT<double>>>>;
 
+    // 迭代求解器 unique_ptr 类型别名（用于 solveWithTracking 分发）
+    using CGPtr = std::unique_ptr<Eigen::ConjugateGradient<Eigen::SparseMatrix<double>,
+                                  Eigen::Lower | Eigen::Upper,
+                                  Eigen::IncompleteCholesky<double>>>;
+    using BiCGPtr = std::unique_ptr<Eigen::BiCGSTAB<Eigen::SparseMatrix<double>,
+                                     Eigen::IncompleteLUT<double>>>;
+    using GMRESPtr = std::unique_ptr<Eigen::GMRES<Eigen::SparseMatrix<double>,
+                                      Eigen::IncompleteLUT<double>>>;
+
     // ----------------------------------------------------------------------------
     // 格式化辅助：双精度转字符串
     // ----------------------------------------------------------------------------
@@ -70,6 +79,8 @@ namespace QEP
         double condition_number_S;  // 目标矩阵条件数
         double cond_time;           // 条件数估计时间
 
+        // M_, C_, K_ 是对外部 QuadraticEigenvalueProblem 中矩阵的引用。
+        // 该 operator 对象的生命周期必须严格包含在原始矩阵的生命周期之内。
         UnifiedShiftInvertOp(const Eigen::SparseMatrix<double> &M,
                              const Eigen::SparseMatrix<double> &C,
                              const Eigen::SparseMatrix<double> &K,
@@ -140,6 +151,14 @@ auto t_pre0 = std::chrono::high_resolution_clock::now();
         // 构建目标矩阵 S = K + σC + σ²M (内层关键求解矩阵 inv(S))    CM = C + σM (减少重复计算过程，提高性能)
         void buildTargetMatrix(QuadraticEigenvalueResult *result)
         {
+            // sigma ≈ 0 时 S = K，无需重建
+            if (std::abs(sigma_) <= 1e-14)
+            {
+                S_ = K_;
+                CM_ = C_;
+                return;
+            }
+
             //------------- 构建S矩阵 ---------------
             auto t_build0 = std::chrono::high_resolution_clock::now();
             std::vector<Eigen::Triplet<double>> trips;
@@ -325,69 +344,31 @@ S_.makeCompressed();
 
             Eigen::VectorXd result;
 
-            // Check if using iterative solver
             // 判断是否为迭代求解器
-            bool is_iterative = std::holds_alternative<
-                                    std::unique_ptr<Eigen::ConjugateGradient<Eigen::SparseMatrix<double>,
-                                                                             Eigen::Lower | Eigen::Upper,
-                                                                             Eigen::IncompleteCholesky<double>>>>(solver_) ||
-                                std::holds_alternative<
-                                    std::unique_ptr<Eigen::BiCGSTAB<Eigen::SparseMatrix<double>,
-                                                                    Eigen::IncompleteLUT<double>>>>(solver_) ||
-                                std::holds_alternative<
-                                    std::unique_ptr<Eigen::GMRES<Eigen::SparseMatrix<double>,
-                                                                 Eigen::IncompleteLUT<double>>>>(solver_);
+            bool is_iterative = std::holds_alternative<CGPtr>(solver_) ||
+                                std::holds_alternative<BiCGPtr>(solver_) ||
+                                std::holds_alternative<GMRESPtr>(solver_);
 
             if (is_iterative)
             {
-                // 处理迭代求解器：捕获统计信息
-                if (std::holds_alternative<
-                        std::unique_ptr<Eigen::ConjugateGradient<Eigen::SparseMatrix<double>,
-                                                                 Eigen::Lower | Eigen::Upper,
-                                                                 Eigen::IncompleteCholesky<double>>>>(solver_))
-                {
-                    auto &solver = std::get<std::unique_ptr<Eigen::ConjugateGradient<Eigen::SparseMatrix<double>,
-                                                                                     Eigen::Lower | Eigen::Upper,
-                                                                                     Eigen::IncompleteCholesky<double>>>>(solver_);
-                    result = solver->solve(rhs);
-                    int iters = solver->iterations();
+                // 通用 lambda：执行求解并捕获迭代统计
+                auto solveAndTrack = [&](auto &solver_ptr) {
+                    result = solver_ptr->solve(rhs);
+                    int iters = solver_ptr->iterations();
                     last_solve_iterations_.store(iters);
-                    last_solve_converged_.store(solver->info() == Eigen::Success);
+                    last_solve_converged_.store(solver_ptr->info() == Eigen::Success);
                     total_inner_iterations_.fetch_add(iters);
                     int cur_max = max_inner_iterations_per_solve_.load();
                     if (iters > cur_max)
                         max_inner_iterations_per_solve_.store(iters);
-                }
-                else if (std::holds_alternative<
-                             std::unique_ptr<Eigen::BiCGSTAB<Eigen::SparseMatrix<double>,
-                                                             Eigen::IncompleteLUT<double>>>>(solver_))
-                {
-                    auto &solver = std::get<std::unique_ptr<Eigen::BiCGSTAB<Eigen::SparseMatrix<double>,
-                                                                             Eigen::IncompleteLUT<double>>>>(solver_);
-                    result = solver->solve(rhs);
-                    int iters = solver->iterations();
-                    last_solve_iterations_.store(iters);
-                    last_solve_converged_.store(solver->info() == Eigen::Success);
-                    total_inner_iterations_.fetch_add(iters);
-                    int cur_max = max_inner_iterations_per_solve_.load();
-                    if (iters > cur_max)
-                        max_inner_iterations_per_solve_.store(iters);
-                }
-                else if (std::holds_alternative<
-                             std::unique_ptr<Eigen::GMRES<Eigen::SparseMatrix<double>,
-                                                          Eigen::IncompleteLUT<double>>>>(solver_))
-                {
-                    auto &solver = std::get<std::unique_ptr<Eigen::GMRES<Eigen::SparseMatrix<double>,
-                                                                         Eigen::IncompleteLUT<double>>>>(solver_);
-                    result = solver->solve(rhs);
-                    int iters = solver->iterations();
-                    last_solve_iterations_.store(iters);
-                    last_solve_converged_.store(solver->info() == Eigen::Success);
-                    total_inner_iterations_.fetch_add(iters);
-                    int cur_max = max_inner_iterations_per_solve_.load();
-                    if (iters > cur_max)
-                        max_inner_iterations_per_solve_.store(iters);
-                }
+                };
+
+                if (std::holds_alternative<CGPtr>(solver_))
+                    solveAndTrack(std::get<CGPtr>(solver_));
+                else if (std::holds_alternative<BiCGPtr>(solver_))
+                    solveAndTrack(std::get<BiCGPtr>(solver_));
+                else if (std::holds_alternative<GMRESPtr>(solver_))
+                    solveAndTrack(std::get<GMRESPtr>(solver_));
             }
             else
             {

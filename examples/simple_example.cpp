@@ -107,7 +107,7 @@ int main() {
 
         // 计算并显示残差
         if (result.eigenvectors.cols() > 0) {
-            auto [maxRes, tableStr] = QEP::computeAndFormatResiduals(
+            auto [maxRes, tableStr] = QEP::formatResidualTable(
                 problem.M, problem.C, problem.K, result);
             if (!tableStr.empty()) std::cout << tableStr;
             std::cout << "\nMaximum relative residual: " << maxRes << "\n";

@@ -267,12 +267,6 @@ int main(int argc, char *argv[])
     auto appCfg  = cfg.toAppConfig();
     auto solParams = cfg.toSolverParams();
 
-    // 将 CLI nev/sigma 也写入 config data（供旧代码路径使用）
-    if (cliOverrides.contains("nev"))
-        cfg.data()["solver"]["default_nev"] = cliOverrides["nev"].get<int>();
-    if (cliOverrides.contains("sigma"))
-        cfg.data()["solver"]["default_sigma"] = cliOverrides["sigma"].get<double>();
-
     // ---- 第3步：初始化环境 ----
     initEnvironment();
 
@@ -343,7 +337,8 @@ int main(int argc, char *argv[])
     std::cout << fmt::secLine("Problem path", cfg.problemBasePath()) << "\n";
     std::cout << fmt::secLine("NEV", std::to_string(nevDisp)) << "\n";
     {
-        std::ostringstream s; s << std::scientific << std::setprecision(2) << sigmaDisp;
+        std::ostringstream s;
+        s << std::fixed << std::setprecision(6) << sigmaDisp;
         std::cout << fmt::secLine("Sigma", s.str()) << "\n";
     }
     if (!appCfg.active_cases.empty()) {

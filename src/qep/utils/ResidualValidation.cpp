@@ -6,6 +6,7 @@
 #include "config/TableFormatter.h"
 #include <iomanip>
 #include <sstream>
+#include <cmath>
 
 namespace QEP
 {
@@ -65,40 +66,30 @@ namespace QEP
             }
 
             // 特征值字符串
-            char eigBuf[64], absBuf[32], relBuf[32];
+            std::ostringstream eigStr, absStr, relStr;
             if (std::abs(lambda.imag()) < 1e-8)
-                snprintf(eigBuf, sizeof(eigBuf), "%.6g", lambda.real());
+                eigStr << std::setprecision(6) << lambda.real();
             else if (std::abs(lambda.real()) < 1e-8)
-                snprintf(eigBuf, sizeof(eigBuf), "%.6gi", lambda.imag());
+                eigStr << std::setprecision(6) << lambda.imag() << 'i';
             else
-                snprintf(eigBuf, sizeof(eigBuf), "%.6g%+.6gi", lambda.real(), lambda.imag());
+                eigStr << std::setprecision(6) << lambda.real()
+                       << std::showpos << lambda.imag() << "i" << std::noshowpos;
 
             if (abs_res >= 0) {
-                snprintf(absBuf, sizeof(absBuf), "%.2e", abs_res);
-                snprintf(relBuf, sizeof(relBuf), "%.2e", rel_res);
+                absStr << std::scientific << std::setprecision(2) << abs_res;
+                relStr << std::scientific << std::setprecision(2) << rel_res;
             }
 
             tbl.addRow({
                 std::to_string(i + 1),
-                eigBuf,
-                abs_res >= 0 ? absBuf : "N/A",
-                rel_res >= 0 ? relBuf : "N/A",
+                eigStr.str(),
+                abs_res >= 0 ? absStr.str() : "N/A",
+                rel_res >= 0 ? relStr.str() : "N/A",
                 status
             });
         }
 
         return {has_vecs ? max_rel : -1.0, tbl.render(2)};
     }
-
-    std::pair<double, std::string> computeAndFormatResiduals(
-        const Eigen::SparseMatrix<double> &M,
-        const Eigen::SparseMatrix<double> &C,
-        const Eigen::SparseMatrix<double> &K,
-        const QuadraticEigenvalueResult &res)
-    {
-        auto result = formatResidualTable(M, C, K, res);
-        return result;
-    }
-
 
 } // namespace QEP

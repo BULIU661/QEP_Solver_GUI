@@ -8,7 +8,6 @@
 #include <string>
 #include <vector>
 #include <sstream>
-#include <cstdio>
 #include <cstring>
 #include <initializer_list>
 #include <algorithm>
@@ -137,16 +136,6 @@ public:
         std::string pre(indent, ' ');
         std::ostringstream oss;
 
-        // underline for header
-        auto underLine = [&]() {
-            int tw = 0;
-            for (size_t i = 0; i < cols_.size(); ++i) {
-                if (i > 0) tw += 3;
-                tw += cols_[i].width;
-            }
-            oss << pre << rep(tw, '\xC4') << "\n";  // ASCII ─ (0xC4 in codepage 437, but use '-' for safety)
-        };
-
         // 表头
         oss << pre;
         for (size_t i = 0; i < cols_.size(); ++i) {
@@ -209,13 +198,10 @@ inline std::string summaryCard(const std::string &caseName,
         : "PARTIAL - not fully converged";
     oss << "  Status    : " << (res.success ? "[OK] " : "[FAIL] ") << st << "\n";
     oss << "  Eigenvalues: " << nEig << " found\n";
-    char buf[128];
-    snprintf(buf, sizeof(buf), "  Total Time : %.3f s", res.solution_time);
-    oss << buf << "\n";
+    oss << "  Total Time : " << std::fixed << std::setprecision(3) << res.solution_time << " s\n";
     if (!res.residuals_rel.empty()) {
         double maxRel = *std::max_element(res.residuals_rel.begin(), res.residuals_rel.end());
-        snprintf(buf, sizeof(buf), "  Max Residual: %.2e", maxRel);
-        oss << buf << "\n";
+        oss << "  Max Residual: " << std::scientific << std::setprecision(2) << maxRel << "\n";
     }
     return oss.str();
 }
@@ -225,18 +211,17 @@ inline std::string performanceStats(const Result &res) {
     std::ostringstream oss;
     oss << "\n  Performance Statistics\n";
     oss << "  " << rep(50, '-') << "\n";
-    char buf[128];
-    snprintf(buf, sizeof(buf), "  Build time        : %.4f s", res.build_time); oss << buf << "\n";
-    snprintf(buf, sizeof(buf), "  Preprocessing time: %.4f s", res.preprocessing_time); oss << buf << "\n";
-    snprintf(buf, sizeof(buf), "  Arnoldi time      : %.4f s", res.arnoldi_time); oss << buf << "\n";
-    snprintf(buf, sizeof(buf), "  Total time        : %.4f s", res.solution_time); oss << buf << "\n\n";
-    snprintf(buf, sizeof(buf), "  Arnoldi iterations: %d", res.arnoldi_iterations); oss << buf << "\n";
-    snprintf(buf, sizeof(buf), "  Inner solves      : %d", res.total_inner_solves); oss << buf << "\n";
-    snprintf(buf, sizeof(buf), "  Inner iterations  : %d", res.total_inner_iterations); oss << buf << "\n";
+    oss << "  Build time        : " << std::fixed << std::setprecision(4) << res.build_time << " s\n";
+    oss << "  Preprocessing time: " << std::fixed << std::setprecision(4) << res.preprocessing_time << " s\n";
+    oss << "  Arnoldi time      : " << std::fixed << std::setprecision(4) << res.arnoldi_time << " s\n";
+    oss << "  Total time        : " << std::fixed << std::setprecision(4) << res.solution_time << " s\n\n";
+    oss << "  Arnoldi iterations: " << res.arnoldi_iterations << "\n";
+    oss << "  Inner solves      : " << res.total_inner_solves << "\n";
+    oss << "  Inner iterations  : " << res.total_inner_iterations << "\n";
     if (res.total_inner_solves > 0) {
-        snprintf(buf, sizeof(buf), "  Avg iterations/solve: %.1f", res.avg_inner_iterations); oss << buf << "\n";
+        oss << "  Avg iterations/solve: " << std::fixed << std::setprecision(1) << res.avg_inner_iterations << "\n";
     }
-    snprintf(buf, sizeof(buf), "  Linear solve time : %.4f s", res.linear_solve_total_time); oss << buf << "\n";
+    oss << "  Linear solve time : " << std::fixed << std::setprecision(4) << res.linear_solve_total_time << " s\n";
     return oss.str();
 }
 

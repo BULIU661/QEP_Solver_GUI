@@ -10,6 +10,7 @@
 #include <complex>
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
+#include <nlohmann/json.hpp>
 #include "config/SolverParams.h"
 
 namespace QEP {
@@ -34,6 +35,7 @@ struct QuadraticEigenvalueProblem {
     std::string name;
     double condition_number_K = 0.0; // K矩阵的条件数，用于自适应参数调整
     double condition_number_S = 0.0; // 构建矩阵的条件数
+    std::string load_error;          // 非空表示加载失败，内容为错误描述
 };
 
 struct QuadraticEigenvalueResult {
@@ -158,14 +160,7 @@ std::pair<double, double> computeResiduals(const Eigen::SparseMatrix<double> &M,
                                            const Eigen::SparseMatrix<double> &K,
                                            std::complex<double> lambda,
                                            const Eigen::VectorXcd &x);
-// 计算并格式化残差表（纯计算，不输出到 cout），返回 <最大相对残差, 格式化表格字符串>
-std::pair<double, std::string> computeAndFormatResiduals(
-    const Eigen::SparseMatrix<double> &M,
-    const Eigen::SparseMatrix<double> &C,
-    const Eigen::SparseMatrix<double> &K,
-    const QuadraticEigenvalueResult &res);
-
-// 格式化残差表为字符串（GUI 使用），返回 <最大相对残差, 格式化表格字符串>
+// 格式化残差表为字符串，返回 <最大相对残差, 格式化表格字符串>
 std::pair<double, std::string> formatResidualTable(
     const Eigen::SparseMatrix<double> &M,
     const Eigen::SparseMatrix<double> &C,
@@ -181,7 +176,15 @@ QuadraticEigenvalueProblem createTestProblemFromFiles(
     const std::string &K_file,
     bool is_sparse,
     const Config::SolverParams &params = {},
+    bool auto_convert = false,
     bool overwrite = false);
+
+// ========== 问题元数据序列化与持久化 ==========
+nlohmann::json computeProblemMetadata(
+    const QuadraticEigenvalueProblem &problem,
+    bool compute_expensive = false);
+bool writeProblemJson(const std::string &directory,
+                      const nlohmann::json &newData);
 
 } // namespace QEP
 
