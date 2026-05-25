@@ -1,367 +1,316 @@
-# QEP Solver
+# QEP Solver — 二次特征值问题求解器（CLI 版本）
 
-基于 **Eigen** 和 **Spectra** 库的稀疏矩阵二次特征值问题（QEP）求解器。
+基于 **Eigen** 和 **Spectra** 的稀疏矩阵二次特征值问题求解器。核心算法为**位移求逆 Arnoldi**，内层线性求解器支持 PardisoLU / SparseLU / SimplicialLLT / CG / BiCGSTAB / GMRES 共 6 种。整个求解过程由 `config.json` 驱动，无需重新编译即可切换问题、调整参数、选择求解器。
 
-## 问题描述
-
-求解二次特征值问题：
+## 数学问题
 
 ```
 (λ²M + λC + K) x = 0
 ```
 
-其中 M, C, K 为稀疏矩阵，λ 为特征值，x 为特征向量。这类问题广泛存在于结构动力学、声学、转子动力学等工程领域。
+M, C, K 为稀疏矩阵，λ 为特征值，x 为特征向量。广泛用于结构动力学、声学、转子动力学。
 
-## 快速构建
-
-项目已包含 Eigen 和 Spectra 依赖，下载后可直接构建：
-
-```bash
-mkdir build && cd build
-cmake .. -DQEP_USE_MKL=OFF    # 无 MKL 环境使用此选项
-cmake --build . -j4
-```
-
-如需 Intel MKL 加速（推荐），配置时确保 MKL 环境可用：
-
-```bash
-cmake ..                      # 自动检测 MKL
-```
-
-## 运行测试
-
-```bash
-./bin/qep_test                # 默认参数运行测试
-./bin/qep_test 0.1 15         # 指定移频点 sigma=0.1，求 15 个特征值
-```
-
-## 运行示例
-
-```bash
-cmake .. -DQEP_BUILD_EXAMPLES=ON
-cmake --build . -j4
-./bin/simple_example
-```
-
-## CMake 配置选项
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `QEP_USE_MKL` | ON | 启用 Intel MKL 加速 |
-| `QEP_USE_AVX2` | ON | 启用 AVX2 指令集 |
-| `QEP_USE_OPENMP` | ON | 启用 OpenMP 并行 |
-| `QEP_BUILD_TEST` | ON | 构建测试程序 |
-| `QEP_BUILD_EXAMPLES` | OFF | 构建示例程序 |
-| `QEP_INSTALL` | ON | 生成安装规则 |
-| `QEP_PROBLEM_BASE_PATH` | `../Problems` | 问题数据文件路径 |
-
-## 项目结构
+## 目录结构
 
 ```
 QEP/
-├── CMakeLists.txt              # 主构建文件
-├── Problems/                   # 测试问题数据（按分类存放）
-│   ├── small_demo/             # 小规模演示问题（100维）
-│   ├── engineering/            # 工程实际问题（1千~78万维）
-│   └── benchmark/              # 基准测试问题
 ├── include/
-│   ├── qep/QEP.h              # 公共接口（数据结构与函数声明）
-│   └── config/                 # 配置头文件
+│   ├── qep/QEP.h                 公共 API（数据结构、求解接口）
+│   └── config/
+│       ├── ConfigManager.h        运行时配置管理器
+│       ├── SolverParams.h         求解器参数结构
+│       ├── AppConfig.h            CLI/GUI 应用配置
+│       └── TableFormatter.h       表格格式化引擎
 ├── src/
-│   ├── qep/core/              # 核心求解器实现
-│   ├── qep/io/                # 矩阵文件读写
-│   ├── qep/utils/             # 工具函数
-│   └── test/                  # 测试程序
-├── examples/                   # 示例程序
-└── third_party/                # 第三方库（Eigen / Spectra）
+│   ├── qep/                      核心求解器库（纯 C++，无 Qt 依赖）
+│   │   ├── core/UnifiedSolver.cpp 位移求逆 Arnoldi 求解器
+│   │   ├── config/                内部配置（GlobalConfig, SolverRegistry）
+│   │   ├── io/MatrixIO.cpp        CSR/COO/二进制矩阵读写
+│   │   └── utils/                 残差验证、矩阵性质、问题构造
+│   └── cli/                      CLI 命令行界面
+│       ├── main.cpp              入口、参数解析、用例筛选
+│       └── TestHarness.cpp       问题加载、求解调度、格式化输出
+├── config.json                   运行时配置文件
+├── Problems/                     测试问题数据（.bin / .txt）
+└── third_party/                  Eigen + Spectra + nlohmann/json
 ```
 
-## 安装到系统（可选）
+## 快速开始
 
-`QEP_INSTALL` 选项（默认 ON）用于将 QEP 库安装到系统目录，供其他 CMake 项目通过 `find_package(QEP)` 引用。
-
-### 执行安装
-
-构建完成后运行：
+### 构建
 
 ```bash
-# 安装到系统默认路径（Linux: /usr/local/, Windows: C:/Program Files/）
-cmake --install .
-
-# 或指定安装目录
-cmake --install . --prefix D:/my_libs/QEP
+mkdir build && cd build
+cmake .. -DQEP_USE_MKL=OFF    # 无 Intel MKL 环境
+cmake ..                       # 自动检测 MKL（推荐）
+cmake --build . -j8
 ```
 
-安装后会生成以下文件结构：
+输出：`bin/qep`
 
+### 运行第一个例子
+
+确保 `config.json` 中 `active_cases` 包含你想跑的问题：
+
+```json
+{ "active_cases": ["sym_pos_def"] }
 ```
-<prefix>/
-├── include/
-│   ├── qep/QEP.h           # 公共头文件
-│   └── config/             # 配置文件
-├── lib/
-│   └── QEP.lib             # 静态库
-└── lib/cmake/QEP/
-    ├── QEPConfig.cmake      # 包配置文件
-    └── QEPTargets.cmake     # 目标导出文件
-```
-
-### 在其他项目中使用
-
-安装后，在其他 CMake 项目中只需写：
-
-```cmake
-find_package(QEP REQUIRED)
-target_link_libraries(my_project PRIVATE QEP::QEP)
-```
-
-不需要再手动配置 Eigen、Spectra 的路径，也不需要再设置 MKL 的编译选项，全部由 QEP 的安装包自动管理。
-
-### 注意事项
-
-- Windows 上推荐指定 `--prefix` 安装到自定义目录（避免管理员权限问题）
-- 如果安装到了非系统默认目录，需要设置 `CMAKE_PREFIX_PATH` 来帮助 `find_package` 找到 QEP：
-  ```bash
-  cmake .. -DCMAKE_PREFIX_PATH=D:/my_libs/QEP
-  ```
-- 如果只是在项目内部使用（不打算导出给其他项目），保持默认 `QEP_INSTALL=ON` 即可，不影响正常构建
-
-## 问题数据说明
-
-程序自带的测试问题存放在 `Problems/` 目录下，分为三类：
-
-
-### small_demo/ —— 小规模演示问题（100维）
-
-适合快速验证求解器功能。
-
-| 子目录 | 问题类型 | 说明 |
-|--------|---------|------|
-| `sym_pos_def` | 对称正定 | 数值稳定，适合入门测试 |
-| `unsymmetric` | 非对称 | 测试非对称问题求解 |
-| `sym_indefinite` | 对称不定 | 测试不定问题求解 |
-| `sym_semi_pos_def` | 对称半正定 | 测试半正定问题求解 |
-
-### benchmark/ —— 基准测试问题
-
-用于评估求解器在不同规模、不同特性问题上的表现。
-
-| 子目录 | 维度 | 特点 |
-|--------|------|------|
-| `spring_200k` | ~200000 | 对称正定，条件数良好，谱分布密集 |
-| `damped_beam_10k` | ~10000 | 对称正定，条件数极差 |
-| `acoustic_wave_200k` | ~200000 | 非对称 QEP |
-| `wiresaw1_10k` | ~10000 | 对称正定，C 为稠密矩阵 |
-| `test_prob_1` | - | 额外基准测试 |
-
-### engineering/ —— 工程实际问题
-
-来自实际工程项目的真实问题数据。
-
-| 子目录 | 维度 | 说明 |
-|--------|------|------|
-| `generator_rotor_1k` | ~1000 | 发电机转子问题 |
-| `plate_10k` | ~10000 | 板子振动问题 |
-| `turbine_560k` | ~560000 | 水轮机问题 |
-| `vibrating_screen_780k` | ~780000 | 振动筛问题 |
-
-## 求解器列表
-
-| 求解器 | 类型 | 依赖 | 适用场景 |
-|--------|------|------|---------|
-| PardisoLU | 直接法 | MKL | 通用，性能最佳 |
-| SparseLU | 直接法 | 无 | 小规模问题 |
-| SimplicialLLT | 直接法 | 无 | 对称正定问题 |
-| ConjugateGradient | 迭代法 | 无 | 对称正定，内存有限 |
-| BiCGSTAB | 迭代法 | 无 | 非对称问题 |
-| GMRES | 迭代法 | 无 | 病态问题 |
-
-## 添加自己的问题
-
-如果你想用自己的矩阵数据来求解 QEP，可以按照以下步骤进行。
-
-### 第一步：准备 TXT 格式的矩阵文件
-
-在 `Problems/` 下新建一个目录（例如 `benchmark/my_problem/`），放入三个文本文件：`M.txt`、`C.txt`、`K.txt`，分别对应质量矩阵、阻尼矩阵和刚度矩阵。
-
-#### 文件格式说明
-
-本程序使用稀疏矩阵的 **CSR（Compressed Sparse Row）** 格式存储。一个矩阵文件的内容结构如下：
-
-```
-<n>                       ← 第一行：矩阵维度 n
-<row_ptr[0]>              ← 接下来 n+1 行：CSR 行指针
-<row_ptr[1]>
-...
-<row_ptr[n]>
-<col_idx[0]>              ← 接下来 nnz 行：列索引
-<col_idx[1]>
-...
-<col_idx[nnz-1]>
-<value[0]>                ← 接下来 nnz 行：数值
-<value[1]>
-...
-<value[nnz-1]>
-```
-
-其中：
-- **行指针（row_ptr）**：长度 n+1，`row_ptr[i]` 表示第 i 行第一个非零元素在列索引/数值数组中的起始位置
-- **列索引（col_idx）**：长度 nnz，按行记录每个非零元素的列号
-- **数值（values）**：长度 nnz，与列索引一一对应，记录非零元素的值
-- 支持 **0-based**（行指针从 0 开始）或 **1-based**（行指针从 1 开始）索引，程序会自动检测
-- 数值支持科学计数法（例如 `1.234e-3`）
-- 可以用 `#` 开头的行作为注释
-
-**一个 3×3 单位矩阵的 CSR 示例（0-based）**：
-
-```
-3
-0
-1
-2
-3
-0
-1
-2
-1.0
-1.0
-1.0
-```
-
-> 除 CSR 格式外，程序也支持 **COO 格式**（每行：`行号 列号 值`），程序会自动检测。同时支持**密集矩阵格式**（首行：`行数 列数`，后接逐行数据）。
-
-### 第二步：将 TXT 转为二进制文件（推荐）
-
-程序运行测试时读取的是二进制 `.bin` 文件，因此需要先将 TXT 转换为二进制。有两种方式：
-
-**方式一（推荐）：程序自动转换**
-
-如果你把问题添加到了测试系统中（见第三步），只需在 `include/config/GlobalConfig.h` 中将 `AUTO_CONVERT_BINARY` 设置为 `true`。程序启动时会自动检查并转换缺失的二进制文件。
-
-**方式二：手动调用转换函数**
-
-在你的代码中调用 `convertTextCSRtoBinary()`：
-
-```cpp
-#include <qep/QEP.h>
-
-// 将文本 CSR 文件转换为二进制文件
-QEP::convertTextCSRtoBinary("Problems/benchmark/my_problem/M.txt",
-                             "Problems/benchmark/my_problem/M.bin");
-QEP::convertTextCSRtoBinary("Problems/benchmark/my_problem/C.txt",
-                             "Problems/benchmark/my_problem/C.bin");
-QEP::convertTextCSRtoBinary("Problems/benchmark/my_problem/K.txt",
-                             "Problems/benchmark/my_problem/K.bin");
-```
-
-### 第三步：注册到测试系统
-
-编辑 `include/config/TestCases.h`，在 `getTestCaseList()` 函数中添加一个测试用例：
-
-```cpp
-{"我的新问题",
- base + "/benchmark/my_problem/M.bin",
- base + "/benchmark/my_problem/C.bin",
- base + "/benchmark/my_problem/K.bin",
- true},
-```
-
-参数说明：
-- 第一个参数：问题的名称，会显示在测试报告中
-- 第二至四个参数：M、C、K 矩阵二进制文件的路径
-- 第五个参数：`true` 表示稀疏矩阵（推荐），`false` 表示密集矩阵
-
-### 第四步：注册转换映射
-
-如果你的问题用了 TXT 格式（第二步），还需要编辑 `include/config/BinaryConvertList.h`，在 `getBinaryConvertList()` 中添加转换映射：
-
-```cpp
-{base + "/benchmark/my_problem/M.txt", base + "/benchmark/my_problem/M.bin"},
-{base + "/benchmark/my_problem/C.txt", base + "/benchmark/my_problem/C.bin"},
-{base + "/benchmark/my_problem/K.txt", base + "/benchmark/my_problem/K.bin"},
-```
-
-这样，当打开了 `AUTO_CONVERT_BINARY` 开关时，程序会自动为你完成 TXT → BIN 的转换。
-
-### 第五步：构建并运行
 
 ```bash
-cd build
-cmake ..
-cmake --build . -j4
-./bin/qep_test
+./bin/qep
 ```
 
-## 编程接口说明
+---
 
-除了使用测试系统，你也可以在自己的代码中直接调用求解器。
+## CLI 命令参考
 
-### 从文件读取并求解
+```
+Usage: qep [options]
 
-```cpp
-#include <qep/QEP.h>
+Options:
+  --config <path>   指定配置文件（默认自动搜索 config.json）
+  --case <pattern>  筛选用例名称（支持 * 通配符和逗号分隔）
+  --group <name>    按分组筛选
+  --solver <name>   筛选求解器（子串匹配）
+  --nev <n>         覆盖特征值个数
+  --sigma <value>   覆盖位移点
+  --tol <value>     覆盖残差检验容差
+  --verbose, -v     详细输出（求解器内部统计 + 文件读取诊断）
+  --quiet, -q       静默模式（仅输出汇总报告）
+  --list            列出所有可用用例后退出
+  --help            打印此帮助
+```
 
-int main() {
-    // 从二进制文件读取矩阵
-    QEP::QuadraticEigenvalueProblem problem;
-    problem.M = QEP::readBinaryCSR("path/to/M.bin");
-    problem.C = QEP::readBinaryCSR("path/to/C.bin");
-    problem.K = QEP::readBinaryCSR("path/to/K.bin");
-    problem.dimension = problem.M.rows();
-    problem.name = "我的问题";
+### 常用示例
 
-    // 配置求解器
-    QEP::LinearSolverConfig config;
-    config.type = QEP::LinearSolverType::SparseLU;
+```bash
+./bin/qep                                    # 运行 active_cases 中的全部用例
+./bin/qep --list                             # 查看有哪些可用用例
+./bin/qep --case sym_pos_def                 # 只跑一个用例
+./bin/qep --group engineering                # 跑某个分组的所有用例
+./bin/qep --case "turbine*" --solver Pardiso # 通配符 + 求解器筛选
+./bin/qep --nev 5 --sigma -0.01 --tol 1e-8   # 覆盖求解参数
+./bin/qep -v                                 # 详细输出模式
+./bin/qep -q                                 # 仅输出汇总报告
+```
 
-    // 求解：求 10 个特征值，移频点 sigma=0.0
-    auto result = QEP::solveQEP_Unified(
-        problem, 10, 0.0,
-        QEP::LinearSolverType::SparseLU, config);
+---
 
-    // 输出结果
-    if (result.success) {
-        for (int i = 0; i < result.eigenvalues_real.size(); ++i)
-            std::cout << "λ[" << i+1 << "] = "
-                      << result.eigenvalues_real(i) << " + "
-                      << result.eigenvalues_imag(i) << "i\n";
-    }
-    return 0;
+## config.json 参考
+
+### 完整字段
+
+```json
+{
+    "active_cases": [],
+    "problem_base_path": "Problems",
+
+    "solver": {
+        "default_nev": 10,
+        "default_sigma": 0.0,
+        "arnoldi_tolerance": 1e-6,
+        "arnoldi_max_iterations": 1000,
+        "check_tolerance": 1e-6,
+        "enable_adaptive_parameters": false,
+
+        "enabled_solvers": {
+            "PardisoLU": true,
+            "SparseLU": false,
+            "SimplicialLLT": false,
+            "ConjugateGradient": false,
+            "BiCGSTAB": false,
+            "GMRES": false
+        },
+
+        "inner_tolerance": 1e-8,
+        "inner_max_iterations": 1000,
+        "ilut_fill_factor": 10,
+        "ilut_drop_tol": 1e-4,
+        "gmres_restart": 30
+    },
+
+    "logging": {
+        "print_eigenvalues": true,
+        "print_residuals": true,
+        "enable_summary_report": true,
+        "enable_condition_estimation": false,
+        "enable_matrix_property_check": false
+    },
+
+    "parallel": {
+        "omp_num_threads": 12,
+        "mkl_num_threads": 12
+    },
+
+    "binary_conversion": {
+        "auto_convert": false,
+        "overwrite": false
+    },
+
+    "test_cases": [
+        {
+            "name": "sym_pos_def",
+            "M_file": "small_demo/sym_pos_def/M.bin",
+            "C_file": "small_demo/sym_pos_def/C.bin",
+            "K_file": "small_demo/sym_pos_def/K.bin",
+            "group": "small_demo",
+            "is_sparse": true,
+            "overrides": {
+                "nev": 20,
+                "sigma": -0.001
+            }
+        }
+    ]
 }
 ```
 
-完整示例参见：`examples/simple_example.cpp`
+### 字段说明
 
-### 在代码中直接构建矩阵并求解
+**solver — 求解器参数**
 
-也可以不依赖文件，直接在代码中构建稀疏矩阵：
+| 字段 | 默认值 | 说明 |
+|---|---|---|
+| `default_nev` | 10 | 需求解的特征值个数 |
+| `default_sigma` | 0.0 | 位移求逆的位移点 σ |
+| `arnoldi_tolerance` | 1e-6 | 外层 Arnoldi 迭代收敛容差 |
+| `arnoldi_max_iterations` | 1000 | Arnoldi 最大迭代次数 |
+| `check_tolerance` | 1e-6 | 残差检验 PASS/FAIL 阈值 |
+| `enable_adaptive_parameters` | false | 根据 K 矩阵条件数自适应调整内层容差 |
+
+**enabled_solvers — 求解器开关**
+
+6 个求解器均可独立启停。所有求解器始终编译在程序中，`false` 表示本次运行不使用。
+
+| 求解器 | 类型 | 说明 |
+|---|---|---|
+| `PardisoLU` | 直接法 | Intel MKL 专有，速度最快（需 MKL） |
+| `SparseLU` | 直接法 | Eigen 自带，无外部依赖 |
+| `SimplicialLLT` | 直接法 | 仅适用于 SPD 矩阵 |
+| `ConjugateGradient` | 迭代法 | 适用于 SPD 矩阵 |
+| `BiCGSTAB` | 迭代法 | 适用于非对称矩阵 |
+| `GMRES` | 迭代法 | 适用于强非对称矩阵 |
+
+**内层求解器参数**（用于迭代法）
+
+| 字段 | 默认值 | 说明 |
+|---|---|---|
+| `inner_tolerance` | 1e-8 | 内层线性求解器收敛容差 |
+| `inner_max_iterations` | 1000 | 内层最大迭代次数 |
+| `ilut_fill_factor` | 10 | ILUT 预条件子填充因子 |
+| `ilut_drop_tol` | 1e-4 | ILUT 丢弃容差 |
+| `gmres_restart` | 30 | GMRES 重启步数 |
+
+**logging — 输出控制**
+
+| 字段 | 默认值 | 说明 |
+|---|---|---|
+| `print_eigenvalues` | true | 打印特征值表 |
+| `print_residuals` | true | 打印残差验证表 |
+| `enable_summary_report` | true | 打印汇总报告 |
+| `enable_condition_estimation` | false | 估计矩阵条件数（计算开销较大） |
+| `enable_matrix_property_check` | false | 打印矩阵对称性/正定性分析 |
+
+**parallel — 并行设置**
+
+| 字段 | 默认值 | 说明 |
+|---|---|---|
+| `omp_num_threads` | 12 | OpenMP 线程数 |
+| `mkl_num_threads` | 12 | Intel MKL 线程数 |
+
+**binary_conversion — 文件格式转换**
+
+| 字段 | 默认值 | 说明 |
+|---|---|---|
+| `auto_convert` | false | 是否扫描目录自动转换 .txt → .bin |
+| `overwrite` | false | 转换时是否覆盖已有 .bin 文件 |
+
+**test_cases — 测试用例**
+
+每个用例的字段：
+
+| 字段 | 说明 |
+|---|---|
+| `name` | 用例名称（用于筛选和显示） |
+| `M_file`, `C_file`, `K_file` | 矩阵文件路径（相对于 `problem_base_path`） |
+| `group` | 分组标签（用于 `--group` 筛选） |
+| `is_sparse` | 是否为稀疏矩阵 |
+| `overrides` | 可选的逐用例参数覆盖 |
+
+### 参数优先级
+
+```
+CLI 命令行（--nev, --sigma, --tol） > 用例级 overrides > solver 全局默认值
+```
+
+---
+
+## 输出格式解读
+
+运行后依次输出：
+
+1. **环境信息**：MKL 版本、OpenMP 状态、AVX2 状态
+2. **配置摘要**：所有生效的参数一览
+3. **逐用例输出**：
+   - 问题基本信息（维度、稀疏度）
+   - 条件数（若开启）
+   - 矩阵性质（若开启）
+   - 每个求解器的运行结果：耗时、特征值表、残差验证表（4 级状态：EXCELLENT / OK / ACCEPTABLE / WARNING）
+4. **汇总报告**：所有用例 × 所有求解器的 PASSED/FAILED 总表
+
+---
+
+## C++ 编程调用
 
 ```cpp
-#include <qep/QEP.h>
+#include "qep/QEP.h"
+#include "config/ConfigManager.h"
+#include "config/SolverParams.h"
 
-int main() {
-    const int n = 3;
+Config::ConfigManager::load("config.json");
+auto solverParams = Config::ConfigManager::instance().toSolverParams();
 
-    Eigen::SparseMatrix<double> M(n, n), C(n, n), K(n, n);
-    // ... 填充矩阵元素 ...
+auto problem = QEP::createTestProblemFromFiles(
+    "my_problem", "M.bin", "C.bin", "K.bin", true, solverParams);
 
-    QEP::QuadraticEigenvalueProblem problem;
-    problem.M = M;
-    problem.C = C;
-    problem.K = K;
-    problem.dimension = n;
-    problem.name = "自定义问题";
+QEP::LinearSolverConfig cfg;
+cfg.inner_tolerance = 1e-8;
+cfg.outer_tolerance = 1e-6;
 
-    // 后续求解同上 ...
-}
+auto result = QEP::solveQEP_Unified(
+    problem, 10, 0.0,
+    QEP::LinearSolverType::PardisoLU, cfg, solverParams);
+
+for (int i = 0; i < result.eigenvalues_real.size(); ++i)
+    std::cout << result.eigenvalues_real(i) << "\n";
 ```
+
+---
+
+## 构建选项
+
+| CMake 选项 | 默认值 | 说明 |
+|---|---|---|
+| `QEP_USE_MKL` | ON | Intel MKL + PARDISO（自动检测，找不到时降级） |
+| `QEP_USE_AVX2` | ON | AVX2 指令集（非 x86-64 自动关闭） |
+| `QEP_USE_OPENMP` | ON | OpenMP 并行（自动检测） |
+| `QEP_BUILD_CLI` | ON | 构建 CLI 求解器 |
+| `QEP_BUILD_GUI` | ON | 构建 Qt GUI（需 Qt5/Qt6） |
+| `QEP_BUILD_EXAMPLES` | OFF | 构建示例程序 |
+| `QEP_INSTALL` | ON | 生成安装规则 |
+
+跨平台：ARM Mac / 鲲鹏 / 飞腾上 `-DQEP_USE_MKL=OFF` 即可编译运行。
+
+## 矩阵文件格式
+
+| 格式 | 扩展名 | 说明 |
+|---|---|---|
+| 二进制 CSR | `.bin` | 推荐，读写最快 |
+| 文本 Matrix Market | `.txt` | 通用交换格式 |
+| 自动转换 | — | `.txt` 文件首次加载时自动转为 `.bin` |
 
 ## 依赖
 
-| 依赖 | 版本 | 说明 |
-|------|------|------|
-| CMake | >= 3.20 | 构建系统 |
-| C++ 编译器 | C++17 | GCC >= 7, Clang >= 5, MSVC 2019+ |
-| Eigen | 3.x | 已包含在 `third_party/eigen` |
-| Spectra | 1.x | 已包含在 `third_party/spectra` |
-| Intel MKL | 可选 | 加速线性代数运算（强烈推荐） |
+- **Eigen 3.4+** — 已内置在 `third_party/`
+- **Spectra 1.1+** — 已内置在 `third_party/`
+- **nlohmann/json** — 已内置在 `third_party/`
+- **Intel MKL**（可选）— PARDISO 直接法 + BLAS 加速
