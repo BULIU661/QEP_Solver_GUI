@@ -9,6 +9,7 @@ QEP/
 ├── bin/qep_gui               GUI 可执行文件
 ├── config.json               运行时配置文件（与 CLI 共享）
 ├── Problems/                 测试问题数据（.bin / .txt）
+├── Results                   gui求解结果导出目录
 ├── src/gui/                  GUI 源代码
 │   ├── main.cpp              入口
 │   ├── MainWindow.cpp        主窗口
