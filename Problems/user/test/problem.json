@@ -1,0 +1,30 @@
+{
+    "C_nnz": 298,
+    "C_properties": {
+        "definiteness": "Indefinite",
+        "storage": "FullSymmetric",
+        "symmetric": true
+    },
+    "K_nnz": 100,
+    "K_properties": {
+        "definiteness": "Indefinite",
+        "storage": "FullSymmetric",
+        "symmetric": true
+    },
+    "M_nnz": 100,
+    "M_properties": {
+        "definiteness": "SPD",
+        "storage": "FullSymmetric",
+        "symmetric": true
+    },
+    "condition_numbers": {
+        "C": 311.1599828307071,
+        "K": 98.99356130895444,
+        "M": 1.0899519372067263
+    },
+    "description": "用户自定义测试问题 1",
+    "dimension": 100,
+    "group": "user",
+    "is_sparse": true,
+    "name": "test"
+}

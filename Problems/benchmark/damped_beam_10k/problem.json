@@ -1,0 +1,1 @@
+{"name":"damped_beam_10k","group":"benchmark","is_sparse":true,"description":"阻尼梁振动问题，1 万自由度"}

@@ -1,0 +1,28 @@
+# Build directories
+build/
+lib/
+bin/
+out/
+cmake-build-*/
+release/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+CMakeUserPresets.json
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Compressed
+*.zip
+*.tar.gz
+*.7z

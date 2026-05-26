@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QEP Solver Configuration",
+  "description": "Configuration schema for QEP Solver CLI",
+  "type": "object",
+  "properties": {
+    "active_cases": {
+      "type": "array",
+      "description": "List of active test case names to run",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "binary_conversion": {
+      "type": "object",
+      "description": "Text-to-binary conversion settings",
+      "properties": {
+        "auto_convert": {
+          "type": "boolean",
+          "description": "Automatically convert .txt to .bin",
+          "default": true
+        },
+        "overwrite": {
+          "type": "boolean",
+          "description": "Overwrite existing .bin files during conversion",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "logging": {
+      "type": "object",
+      "description": "Logging and output control",
+      "properties": {
+        "enable_condition_estimation": {
+          "type": "boolean",
+          "description": "Estimate and log matrix condition numbers",
+          "default": false
+        },
+        "enable_matrix_property_check": {
+          "type": "boolean",
+          "description": "Check and log matrix properties (symmetry, definiteness)",
+          "default": false
+        },
+        "enable_summary_report": {
+          "type": "boolean",
+          "description": "Print summary report after solving",
+          "default": true
+        },
+        "print_eigenvalues": {
+          "type": "boolean",
+          "description": "Print computed eigenvalues",
+          "default": true
+        },
+        "print_residuals": {
+          "type": "boolean",
+          "description": "Print residual verification table",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "parallel": {
+      "type": "object",
+      "description": "Parallel execution settings",
+      "properties": {
+        "mkl_num_threads": {
+          "type": "integer",
+          "description": "Number of threads for Intel MKL",
+          "minimum": 1,
+          "default": 12
+        },
+        "omp_num_threads": {
+          "type": "integer",
+          "description": "Number of OpenMP threads",
+          "minimum": 1,
+          "default": 12
+        }
+      },
+      "additionalProperties": false
+    },
+    "problem_base_path": {
+      "type": "string",
+      "description": "Base path for problem data files",
+      "default": "Problems"
+    },
+    "solver": {
+      "type": "object",
+      "description": "Solver configuration",
+      "properties": {
+        "arnoldi_max_iterations": {
+          "type": "integer",
+          "description": "Maximum Arnoldi iterations",
+          "minimum": 1,
+          "default": 1000
+        },
+        "arnoldi_tolerance": {
+          "type": "number",
+          "description": "Arnoldi convergence tolerance",
+          "exclusiveMinimum": 0,
+          "default": 1e-06
+        },
+        "check_tolerance": {
+          "type": "number",
+          "description": "Residual check tolerance",
+          "exclusiveMinimum": 0,
+          "default": 1e-06
+        },
+        "default_nev": {
+          "type": "integer",
+          "description": "Default number of eigenvalues to compute",
+          "minimum": 1,
+          "default": 10
+        },
+        "default_sigma": {
+          "type": "number",
+          "description": "Default spectral shift (sigma)",
+          "default": 0.0
+        },
+        "enable_adaptive_parameters": {
+          "type": "boolean",
+          "description": "Enable adaptive parameter tuning based on matrix condition",
+          "default": false
+        },
+        "enabled_solvers": {
+          "type": "object",
+          "description": "Enable/disable individual linear solvers",
+          "properties": {
+            "BiCGSTAB": { "type": "boolean", "default": false },
+            "ConjugateGradient": { "type": "boolean", "default": false },
+            "GMRES": { "type": "boolean", "default": false },
+            "PardisoLU": { "type": "boolean", "default": true },
+            "SimplicialLLT": { "type": "boolean", "default": false },
+            "SparseLU": { "type": "boolean", "default": false }
+          },
+          "additionalProperties": false
+        },
+        "gmres_restart": {
+          "type": "integer",
+          "description": "GMRES restart dimension",
+          "minimum": 1,
+          "default": 30
+        },
+        "ilut_drop_tol": {
+          "type": "number",
+          "description": "ILUT preconditioner drop tolerance",
+          "exclusiveMinimum": 0,
+          "default": 0.0001
+        },
+        "ilut_fill_factor": {
+          "type": "integer",
+          "description": "ILUT preconditioner fill factor",
+          "minimum": 1,
+          "default": 10
+        },
+        "inner_max_iterations": {
+          "type": "integer",
+          "description": "Maximum inner linear solver iterations",
+          "minimum": 1,
+          "default": 1000
+        },
+        "inner_tolerance": {
+          "type": "number",
+          "description": "Inner linear solver tolerance",
+          "exclusiveMinimum": 0,
+          "default": 1e-08
+        }
+      },
+      "additionalProperties": false
+    },
+    "test_cases": {
+      "type": "array",
+      "description": "Legacy test case definitions (auto-discovery is preferred)",
+      "items": { "type": "string" },
+      "default": []
+    }
+  },
+  "additionalProperties": false
+}

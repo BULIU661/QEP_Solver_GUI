@@ -1,0 +1,6 @@
+{
+    "name":"sym_pos_def",
+    "group":"small_demo",
+    "is_sparse":true,
+    "description":"对称正定矩阵测试案例，100 维"
+}
