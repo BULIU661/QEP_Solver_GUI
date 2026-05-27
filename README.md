@@ -2,9 +2,8 @@
 
 [![C++17](https://img.shields.io/badge/C++-17-blue)](https://en.cppreference.com/w/cpp/17)
 [![Qt](https://img.shields.io/badge/Qt-5%2F6-green)](https://www.qt.io/)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-工业级二次特征值问题求解器，求解 **(λ²M + λC + K)x = 0**。基于位移-逆 Arnoldi 方法（Spectra 库），支持 6 种内层线性求解器，可选 MKL + OpenMP + AVX2 加速。
+工业级二次特征值问题求解器，求解 **(λ²M + λC + K)x = 0**。基于位移-逆 Arnoldi 方法（Spectra 库），支持 6 种内层线性求解器，根目录Cmakelists编译可选 MKL + OpenMP + AVX2 加速。
 
 ---
 
@@ -12,11 +11,11 @@
 
 QEP Solver 提供 **GUI / CLI / JSON** 三种交互方式，共享同一核心库和配置文件：
 
-| 方式 | 入口 | 适用场景 |
+| 方式  | 入口              |          适用场景          |
 |------|------|----------|
-| **GUI** | `qep_gui.exe` | 交互式参数调节、可视化结果浏览 |
-| **CLI** | `qep.exe` | 批量处理、脚本调用、HPC 集群 |
-| **JSON** | `config.json` | CI/CD 流程、程序化配置 |
+| **GUI** | `qep_gui.exe`  | 交互式参数调节、可视化结果浏览 |
+| **CLI** | `qep.exe`      | 批量处理、脚本调用、HPC 集群 |
+| **JSON** | `config.json` | CI/CD 流程、程序化配置     |
 
 三种方式读写同一份 `config.json`。GUI 中修改的参数 CLI 立即可见，反之亦然。
 
@@ -55,22 +54,23 @@ Problems/{任意分类}/{问题名称}/
 支持两种 CSR（Compressed Sparse Row）格式：
 
 **文本 CSR（.txt）** — 人类可读，适合手动准备小规模问题：
-```
-100 100 100          # 行数 列数 非零元数
-0 0 1.0              # 行索引(0-based) 列索引 值
-0 1 2.0
-...
-```
 
-第一行为矩阵维度，后续每行一个非零元。
+```
+n                         # 矩阵维度 n（方阵，单个整数）
+r0 r1 r2 ... rn           # 行偏移 row_ptr（n+1 个整数，空格分隔）
+c0 c1 c2 ... c(nnz-1)     # 列索引 col_idx（nnz 个整数，0-based）
+v0 v1 v2 ... v(nnz-1)     # 非零元数值 values（nnz 个 double）
+```
 
 **二进制 CSR（.bin）** — 机器直接读取，适合大规模问题：
 ```
-[4字节 int: 行数] [4字节 int: 列数] [8字节 long: 非零元数]
-[4字节 int × (行数+1): 行偏移数组 row_ptr]
-[4字节 int × 非零元数: 列索引数组 col_idx]
-[8字节 double × 非零元数: 数值数组 values]
+[int n: 4字节]                 # 矩阵维度 n
+[int nnz: 4字节]               # 非零元总数
+[int row_ptr[n+1]: 每项4字节]    # 行偏移数组
+[int col_idx[nnz]: 每项4字节]    # 列索引数组（0-based）
+[double values[nnz]: 每项8字节]  # 非零元数值数组
 ```
+
 
 二进制格式读取速度极快（直接 mmap 到内存，无需文本解析），大文件推荐使用。
 
@@ -89,6 +89,7 @@ Problems/{任意分类}/{问题名称}/
 - 大规模矩阵（百万级非零元）下文本文件可能高达数 GB，解析耗时巨大
 - 二进制文件可直接内存映射（memory-mapped I/O），操作系统级零拷贝读取
 - 一次转换后可重复求解，无需反复解析
+- 本求解器默认只能求解按照上述.txt格式通过自动转换功能得到的.bin矩阵存储文件
 
 ### problem.json 字段说明
 
